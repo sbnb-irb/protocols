@@ -1,0 +1,633 @@
+---
+title: "Make microbiome/bacteria dataset ready for signature procedure"
+author: "Nils Kurzawa"
+date: "1/28/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(readr)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+Read in Maier et al. datasets
+
+```{r}
+maier_et_al_df <- read_xlsx("../data/maier_41586_2018_BFnature25979_MOESM5_ESM.xlsx", sheet = 1)
+maier_et_al_add_df <- read_xlsx("../data/maier_additional_41586_2018_BFnature25979_MOESM8_ESM.xlsx", sheet = 1)
+```
+
+Join Maier datasets
+
+```{r}
+maier_et_al_full_df <- maier_et_al_df %>% 
+  left_join(maier_et_al_add_df[,-c(2:4)], by = "prestwick_ID") %>% 
+  filter(prestwick_ID != "Prestw-406")
+```
+
+
+Read in compound name mapping
+```{r}
+compound_name_df <- read_csv("../data/compound_name_smiles_inchi_df.csv") %>% 
+    within(InChiKey[compound_name == "Lymecycline"] <- "PZTCVADFMACKLU-UEPZRUIBSA-N") %>% 
+    within(InChiKey[compound_name == "(S)-(-)-Cycloserine"] <- "DYDCUQKUCUHJBH-REOHCLBHSA-N") %>% 
+    within(InChiKey[compound_name == "(R)-Propranolol hydrochloride"] <- "ZMRUPTIKESYGQW-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "(S)-propranolol hydrochloride"] <- "ZMRUPTIKESYGQW-UQKRIMTDSA-N") %>% 
+    within(InChiKey[compound_name == "(R)-(+)-Atenolol"] <- "METKIMKYRPQLGS-GFCCVEGCSA-N") %>%
+    within(InChiKey[compound_name == "(S)-(-)-Atenolol"] <- "METKIMKYRPQLGS-LBPRGKRZSA-N") %>%
+    within(InChiKey[compound_name == "Tetracycline hydrochloride"] <- "YCIHPQHVWDULOY-FMZCEJRJSA-N") %>%
+    within(InChiKey[compound_name == "Methyldopate hydrochloride"] <- "QSRVZCCJDKYRRF-YDALLXLXSA-N") %>%
+    within(InChiKey[compound_name == "Proparacaine hydrochloride"] <- "BFUUJUGQJUTPAF-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Sulfaquinoxaline sodium salt"] <- "WXUQBKOBXREBBX-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Methapyrilene hydrochloride"] <- "BONORRGKLJBGRV-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "(+) -Levobunolol hydrochloride"] <- "DNTDOBSIBZKFCP-UTONKHPSSA-N") %>% 
+    within(InChiKey[compound_name == "Buflomedil hydrochloride"] <- "ZDPACSAHMZADFZ-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Fursultiamine Hydrochloride"] <- "OPGOLNDOMSBSCW-CLNHMMGSSA-N") %>% 
+    within(InChiKey[compound_name == "Alexidine dihydrochloride"] <- "BRJJFBHTDVWTCJ-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Scopolamin-N-oxide hydrobromide"] <- "MGNNYKWRWHQLCR-RDYQINQZSA-N") %>% 
+    within(InChiKey[compound_name == "R(-) Apomorphine hydrochloride hemihydrate"] <- "DQQCJDBYNZMPOA-FFXKMJQXSA-N") %>% 
+    within(InChiKey[compound_name == "THIP Hydrochloride"] <- "ZDZDSZQYRBZPNN-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Molindone hydrochloride"] <- "GQWNECFJGBQMBO-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Ozagrel hydrochloride"] <- "CWKFWBJJNNPGAM-IPZCTEOASA-N") %>% 
+    within(InChiKey[compound_name == "Riluzole hydrochloride"] <- "QEAOELIJQRYJJS-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "DO 897/99"] <- "LUGFRGZVWVEDNU-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Indatraline hydrochloride"] <- "QICQDZXGZOVTEF-MELYUZJYSA-N") %>% 
+    within(InChiKey[compound_name == "Ipsapirone"] <- "TZJUVVIWVWFLCD-UHFFFAOYSA-N") %>% 
+    filter(prestwick_id != "Prestw-406") 
+    
+```
+Add compound ids to joined dataset
+
+```{r}
+maier_et_al_full_id_df <- maier_et_al_full_df %>% 
+    left_join(compound_name_df %>% dplyr::select(prestwick_ID = prestwick_id, InChiKey),
+              by = "prestwick_ID") %>% 
+    dplyr::select(InChiKey, everything()) %>% 
+    filter(!is.na(InChiKey))
+```
+
+Read in Stokes et al. data
+
+```{r}
+stokes_et_al_df <- read_csv("../data/stokes_et_al_smiles_cc_inchikey_df.csv") %>% 
+    within(InChiKey[Name == "TETRACYCLINE HYDROCHLORIDE"] <- "YCIHPQHVWDULOY-FMZCEJRJSA-N") %>% 
+    within(InChiKey[Name == "BENZALKONIUM CHLORIDE HYDRATE"] <- "RBTBFTRPCNLSDE-UHFFFAOYSA-N") %>% 
+    within(InChiKey[Name == "CEFCAPENE PIVOXIL HYDROCHLORIDE"] <- "ALPFRUJYOAKQQR-CQZSJNSUSA-N") %>% 
+    within(InChiKey[Name == "CHINIOFON"] <- "ZBJWWKFMHOAPNS-UHFFFAOYSA-N") %>% 
+    within(InChiKey[Name == "ANTIMONY POTASSIUM TARTRATE TRIHYDRATE"] <- "KLDGLPRBBANWAW-UHFFFAOYSA-J") %>% 
+    within(InChiKey[Name == "TRIACETYLRESVERATROL"] <- "PDAYUJSOJIMKIS-SNAWJCMRSA-N") %>% 
+    within(InChiKey[Name == "PROPARACAINE HYDROCHLORIDE"] <- "BFUUJUGQJUTPAF-UHFFFAOYSA-N") %>% 
+    within(InChiKey[Name == "ALGINIC ACID [Mol Wt ~200,000; monomers shown]"] <- "MSXHSNHNTORCAW-UHFFFAOYSA-M") %>% 
+    within(InChiKey[Name == "VILAZODONE HYDROCHLORIDE"] <- "RPZBRGFNBNQSOP-UHFFFAOYSA-N") %>% 
+    within(InChiKey[Name == "EFAROXAN HYDROCHLORIDE"] <- "DWOIUCRHVWIHAH-UHFFFAOYSA-N") %>% 
+    within(InChiKey[Name == "OXINIACIC ACID"] <- "FJCFFCXMEXZEIM-UHFFFAOYSA-N") %>% 
+    within(InChiKey[Name == "RILUZOLE"] <- "FTALBRSUTCGOEG-UHFFFAOYSA-N") %>% 
+    within(InChiKey[Name == "OZAGREL HYDROCHLORIDE"] <- "CWKFWBJJNNPGAM-IPZCTEOASA-N") %>% 
+    within(InChiKey[Name == "NONIC ACID"] <- "FNZSVEHJZREFPF-SSDOTTSWSA-N") %>%
+    within(InChiKey[Name == "METHAPYRILENE HYDROCHLORIDE"] <- "BONORRGKLJBGRV-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "VARDENAFIL HYDROCHLORIDE"] <- "XCMULUAPJXCOHI-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "MEPIROXOL"] <- "LQYJAVWWKTWWKN-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "BUFLOMEDIL HYDROCHLORIDE"] <- "ZDPACSAHMZADFZ-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "4-METHOXY-4'-HYDROXY-DALBERGIONE"] <- "DLCVFIMWFKVRTM-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "GLAUCONIC ACID ACETATE"] <- "VERYNZFRBNJXKD-SXWBHPAMSA-N") %>%
+    within(InChiKey[Name == "CASANTHRANOL [cascaroside A shown]"] <- "CPUHNROBVJNNPW-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "GABOXADOL HYDROCHLORIDE"] <- "ZDZDSZQYRBZPNN-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "SINAPIC ACID METHYL ETHER"] <- "YTFVRYKNXDADBI-SNAWJCMRSA-N") %>%
+    within(InChiKey[Name == "VERATRINE HYDROCHLORIDE"] <- "VSARLHXBMYVYSM-ZLVREPKBSA-N") %>%
+    within(InChiKey[Name == "ACETYL-DIHYDRO-7-EPIKHIVORIN"] <- "ODLCLZLDYDHRGT-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "MOLINDONE HYDROCHLORIDE"] <- "GQWNECFJGBQMBO-UHFFFAOYSA-N") %>%
+    within(InChiKey[Name == "SUCRALFATE"] <- "YZPQNHUVIVIUCT-JTJNLBSYSA-F") #%>% 
+    #group_by(Name, InChiKey)
+    
+    
+```
+
+Check how many compounds overlap between the two datasets
+
+```{r}
+length(which(stokes_et_al_df$InChiKey %in% maier_et_al_full_id_df$InChiKey))
+```
+
+Read in Spitzer et al. data
+
+```{r}
+spitzer_et_al_c_gattii_df <- read_xls("../data/yeast_strain_effect_msb201131-sup-0002.xls",
+                                       sheet = "C. gattii")
+spitzer_et_al_c_neoformans_df <- read_xls("../data/yeast_strain_effect_msb201131-sup-0002.xls",
+                                       sheet = "C. neoformans")
+spitzer_et_al_c_albicans_df <- read_xls("../data/yeast_strain_effect_msb201131-sup-0002.xls",
+                                       sheet = "C. albicans")
+spitzer_et_al_s_cerevisiae_df <- read_xls("../data/yeast_strain_effect_msb201131-sup-0002.xls",
+                                       sheet = "S. cerevisiae")
+
+spitzer_et_combo_df <- spitzer_et_al_c_gattii_df %>% 
+    dplyr::select(`Drug name`, Cgattii = `C. gattii \nPrestwick`,
+                  Cgattii_FLC = `C. gattii \nFLC+Prestwick`) %>% 
+    left_join(spitzer_et_al_c_neoformans_df %>% 
+                  dplyr::select(`Drug name`, Cneoformans = `C. neoformans\nPrestwick`,
+                  Cneoformans_FLC = `C. neoformans \nFLC+Prestwick`),
+              by = "Drug name") %>% 
+    left_join(spitzer_et_al_c_albicans_df %>% 
+                  dplyr::select(`Drug name`, Calbicans = `C. albicans \nPrestwick`,
+                  Calbicans_FLC = `C. albicans \nFLC+Prestwick`),
+              by = "Drug name") %>% 
+    left_join(spitzer_et_al_s_cerevisiae_df %>% 
+                  dplyr::select(`Drug name`, Scerevisae = `S. cerevisiae \nPrestwick`,
+                  Scerevisae_FLC = `S. cerevisiae \nFLC+Prestwick`),
+              by = "Drug name") 
+```
+
+
+Read in Spitzer et al. compound name id mapping
+
+```{r}
+spitzer_et_al_cmp_mapping_df <- read_csv("../data/lans_gattii_smiles_inchikeys_df.csv") %>% 
+    within(InChiKeys[`Drug name` == "Tacrine hydrochloride hydrate"] <- "ZUFVXZVXEJHHBN-UHFFFAOYSA-N") %>% 
+    within(InChiKeys[`Drug name` == "Riluzole hydrochloride"] <- "QEAOELIJQRYJJS-UHFFFAOYSA-N") %>% 
+    within(InChiKeys[`Drug name` == "DO 897/99"] <- "LUGFRGZVWVEDNU-UHFFFAOYSA-N") %>% 
+    within(InChiKeys[`Drug name` == "Proparacaine hydrochloride"] <- "BFUUJUGQJUTPAF-UHFFFAOYSA-N") %>% 
+    within(InChiKeys[`Drug name` == "Hippeastrine hydrobromide"] <- "JXIXDPWKBCBXEY-NVJKKXITSA-N") %>% 
+    within(InChiKeys[`Drug name` == "TetracaÃ¯Â¿Â½ne hydrochloride"] <- "PPWHTZKZQNXVAE-UHFFFAOYSA-N") %>% 
+    within(InChiKeys[`Drug name` == "Nitrarine dihydrochloride"] <- "AJFJKGLXKPEJMU-UHFFFAOYSA-N") %>% 
+    within(InChiKeys[`Drug name` == "Sulfaquinoxaline sodium salt"] <- "WXUQBKOBXREBBX-UHFFFAOYSA-N") %>% 
+    within(InChiKeys[`Drug name` == "Lobeline alpha (-) hydrochoride"] <- "MKMYPTLXLWOUSO-NFQNBQCWSA-N") %>% 
+    within(InChiKeys[`Drug name` == "Methapyrilene hydrochloride"] <- "BONORRGKLJBGRV-UHFFFAOYSA-N") %>% 
+    within(InChiKeys[`Drug name` == "Harmol hydrochloride monohydrate"] <- "VYQGBOFPYBNHBX-UHFFFAOYSA-N") %>%
+    within(InChiKeys[`Drug name` == "Tetracycline hydrochloride"] <- "YCIHPQHVWDULOY-FMZCEJRJSA-N") %>%
+    within(InChiKeys[`Drug name` == "Methyldopate hydrochloride"] <- "QSRVZCCJDKYRRF-YDALLXLXSA-N") %>%
+    within(InChiKeys[`Drug name` == "Ozagrel hydrochloride"] <- "CWKFWBJJNNPGAM-IPZCTEOASA-N") %>% within(InChiKeys[`Drug name` == "(Ã¯Â¾Â±)-Nipecotic acid"] <- "XJLSEXAGTJCILF-UHFFFAOYSA-N") %>%
+    within(InChiKeys[`Drug name` == "Molindone hydrochloride"] <- "GQWNECFJGBQMBO-UHFFFAOYSA-N") %>%
+    within(InChiKeys[`Drug name` == "THIP Hydrochloride"] <- "ZDZDSZQYRBZPNN-UHFFFAOYSA-N") %>% within(InChiKeys[`Drug name` == "Convolamine hydrochloridee"] <- "BGPGVBLFHMZCNG-LIWIJTDLSA-N") %>%
+    within(InChiKeys[`Drug name` == "R(-) Apomorphine hydrochloride hemihydrate"] <- "DQQCJDBYNZMPOA-FFXKMJQXSA-N") %>%
+    within(InChiKeys[`Drug name` == "(cis-) Nanophine"] <- "PEDXCVQZZVVOGO-UKMDXRBESA-N") %>%
+    within(InChiKeys[`Drug name` == "Scopolamin-N-oxide hydrobromide"] <- "MGNNYKWRWHQLCR-RDYQINQZSA-N") %>%
+    within(InChiKeys[`Drug name` == "Alexidine dihydrochloride"] <- "BRJJFBHTDVWTCJ-UHFFFAOYSA-N") %>%
+    within(InChiKeys[`Drug name` == "Fursultiamine Hydrochloride"] <- "OPGOLNDOMSBSCW-CLNHMMGSSA-N") %>%
+    within(InChiKeys[`Drug name` == "LidocaÃ¯Â¿Â½ne hydrochloride"] <- "IYBQHJMYDGVZRY-UHFFFAOYSA-N") %>%
+    within(InChiKeys[`Drug name` == "Buflomedil hydrochloride"] <- "ZDPACSAHMZADFZ-UHFFFAOYSA-N") %>%
+    within(InChiKeys[`Drug name` == "(+) -Levobunolol hydrochloride"] <- "DNTDOBSIBZKFCP-UTONKHPSSA-N") %>%
+    within(InChiKeys[`Drug name` == "Rauwolscine hydrochloride"] <- "PIPZGJSEDRMUAW-ZKKXXTDSSA-N") %>% 
+    within(InChiKeys[`Drug name` == "(S)-(-)-Cycloserine"] <- "DYDCUQKUCUHJBH-REOHCLBHSA-N") 
+```
+
+Check how many compounds overlap between the two datasets
+
+```{r}
+length(which(spitzer_et_al_cmp_mapping_df$InChiKeys %in% maier_et_al_full_id_df$InChiKey))
+```
+
+Make Spitzer et al data frame ready to be joined
+
+```{r}
+spitzer_et_combo_raw_anno_df <- spitzer_et_combo_df %>% 
+    left_join(spitzer_et_al_cmp_mapping_df %>% 
+                  dplyr::select(`Drug name`, InChiKey = InChiKeys), by = "Drug name") %>% 
+    filter(!is.na(InChiKey), !duplicated(InChiKey)) %>% # I checked that all duplicates had the same effect
+    dplyr::select(-`Drug name`) 
+
+spitzer_et_combo_raw_anno_mat <- apply(spitzer_et_combo_raw_anno_df[,1:8], 2, function(x){
+    case_when(x <= 20 ~ '0.001',
+              x <= 50 ~ '0.05',
+              TRUE ~ '0.5')
+})
+rownames(spitzer_et_combo_raw_anno_mat) <- spitzer_et_combo_raw_anno_df$InChiKey
+
+spitzer_et_combo_raw_anno_df <- as_tibble(spitzer_et_combo_raw_anno_mat, rownames = "InChiKey")
+```
+
+Read in Yousfi et al invasive mould data
+
+```{r}
+yousfi_et_al_df <- read_xlsx("../data/yousfi_et_al_prestwick_invasive_moulds.xlsx") %>% 
+    filter(!`Compound name` %in% 
+               c("Anthelmintics", "Antineoplastics", "Miscellaneous drugs")) %>% 
+    within(`Compound name`[`Compound name` == "Butenafine hydrochloride"] <- "Butenafine Hydrochloride") %>% 
+    within(`Compound name`[`Compound name` == "Oxiconazole nitrate"] <- "Oxiconazole Nitrate") %>%  
+    within(`Compound name`[`Compound name` == "8-Azaguanine"] <- "Azaguanine-8") %>% 
+    within(`Compound name`[`Compound name` == "Camptothecin"] <- "Camptothecine (S,+)") %>% 
+    within(`Compound name`[`Compound name` == "Pentetic acid (chelator)"] <- "Pentetic acid") %>% 
+    within(`Compound name`[`Compound name` == "Disulfiram (alcohol addiction)"] <- "Disulfiram") %>% 
+    filter(!duplicated(`Compound name`))
+    
+
+```
+
+Check for overlap with Maier et al.
+
+```{r}
+length(which(yousfi_et_al_df$`Compound name` %in% maier_et_al_df$chemical_name))
+```
+
+Make Yousfi et al data frame ready to be joined
+
+```{r}
+yousfi_proc_mat <- apply(yousfi_et_al_df[,2:9], 2, function(x){
+    case_when(grepl("–", x) ~ '0.5',
+              TRUE ~ '0.001')
+})
+rownames(yousfi_proc_mat) <- yousfi_et_al_df$`Compound name`
+
+yousfi_proc_df <- as_tibble(yousfi_proc_mat, rownames = "chemical_name")
+colnames(yousfi_proc_df) <- sub(" ", "_", colnames(yousfi_proc_df))
+```
+
+Read in Foerster et al data
+
+```{r}
+foerster_et_al_df <- read_xlsx("../data/foerster_et_al_ngonorrhoeae.xlsx") %>% 
+    mutate(N_gonorrhoeae = "0.001") %>% 
+    dplyr::select(prestwick_ID, N_gonorrhoeae)
+```
+
+
+Check for overlap with Maier et al.
+
+```{r}
+length(which(foerster_et_al_df$prestwick_ID %in% maier_et_al_df$prestwick_ID))
+```
+
+Read in Kanvatirth et al. data
+
+```{r}
+kanva_msmegmatis_df <- read_xlsx("../data/kanvartirth_et_al_mycobacterium.xlsx", sheet = 1)
+kanva_mbovis_df <- read_xlsx("../data/kanvartirth_et_al_mycobacterium.xlsx", sheet = 2)
+
+kanva_combo_df <- kanva_msmegmatis_df %>% 
+    full_join(kanva_mbovis_df, by = "chemical_name") %>% 
+    within(chemical_name[grepl("Meclocyline sulfosalicylate", chemical_name)] <- "Meclocycline sulfosalicylate") %>% 
+    within(chemical_name[grepl("Alexidine", chemical_name)] <- "Alexidine dihydrochloride") %>% 
+    within(chemical_name[grepl("Clomiphene citrate", chemical_name)] <- "Clomiphene citrate (Z,E)") %>% 
+    within(chemical_name[grepl("Raloxifene", chemical_name)] <- "Raloxifene hydrochloride") %>% 
+    within(chemical_name[grepl("GBR 12909", chemical_name)] <- "GBR 12909 dihydrochloride") %>% 
+    within(chemical_name[grepl("Sulocitidil", chemical_name)] <- "Suloctidil") %>% 
+    within(chemical_name[grepl("Apomorphine", chemical_name)] <- "R(-) Apomorphine hydrochloride hemihydrate") %>% 
+    within(chemical_name[grepl("Fluspirilene", chemical_name)] <- "Fluspirilen") %>% 
+    within(chemical_name[grepl("Thonzonium", chemical_name)] <- "Thonzonium bromide") %>% 
+    within(chemical_name[grepl("Florfenciol", chemical_name)] <- "Florfenicol") %>% 
+    within(chemical_name[grepl("Pentamidine", chemical_name)] <- "Pentamidine isethionate") %>% 
+    within(chemical_name[grepl("Pinaverium", chemical_name)] <- "Pinaverium bromide") %>% 
+    within(chemical_name[grepl("Tripelennamine", chemical_name)] <- "Tripelennamine hydrochloride") %>% 
+    within(chemical_name[grepl("Rosiglitazone", chemical_name)] <- "Rosiglitazone Hydrochloride") %>% 
+    within(chemical_name[grepl("Olopatadine", chemical_name)] <- "Olopatadine hydrochloride") %>% 
+    within(chemical_name[grepl("Granisteron", chemical_name)] <- "Granisetron") %>% 
+    within(chemical_name[grepl("Phenteramine", chemical_name)] <- "Phentermine hydrochloride")
+
+
+```
+
+
+Check for overlap with Maier et al.
+
+```{r}
+length(which(kanva_combo_df$chemical_name %in% maier_et_al_df$chemical_name))
+```
+
+
+
+Create new column in Maier et al table to add Stokes et al. data
+
+```{r}
+# less stringent cutoff for Stokes et al.
+stokes_et_al_df <- stokes_et_al_df %>% 
+  within(Activity[Mean_Inhibition < 0.5] <- "Active")
+
+maier_et_al_extended_df <- maier_et_al_full_id_df %>% 
+  filter(!is.na(InChiKey)) %>% 
+  left_join(stokes_et_al_df %>% 
+              dplyr::select(InChiKey, `Escherichia coli BW25113 (aerobic)` = Activity) %>% 
+              filter(!is.na(InChiKey)) %>% 
+              # remove duplicate compounds
+              distinct(),
+            by = 'InChiKey') %>% 
+  within(`Escherichia coli BW25113 (aerobic)`[`Escherichia coli BW25113 (aerobic)` == "Inactive"] <- '0.5') %>% 
+  within(`Escherichia coli BW25113 (aerobic)`[`Escherichia coli BW25113 (aerobic)` == "Active"] <- '0.001') 
+
+```
+
+Join Spitzer et al data
+
+```{r}
+maier_et_al_further_extended_df <- maier_et_al_extended_df %>% 
+    left_join(spitzer_et_combo_raw_anno_df, by = "InChiKey")
+```
+
+Join Yousfi et al data
+
+```{r}
+maier_et_al_even_further_extended_df <- maier_et_al_further_extended_df %>% 
+    left_join(yousfi_proc_df, by = "chemical_name")
+```
+
+
+Join Foerster et al data
+
+```{r}
+maier_et_al_even_further_extended2_df <- maier_et_al_even_further_extended_df %>% 
+    left_join(foerster_et_al_df, by = "prestwick_ID")
+```
+
+
+Join Kanva et al data
+
+```{r}
+maier_et_al_even_further_extended3_df <- maier_et_al_even_further_extended2_df %>% 
+    left_join(kanva_combo_df, by = "chemical_name")
+```
+
+Add new column with Candida auris effects
+
+```{r}
+maier_et_al_even_further_extended3_df$Cauris <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        c("R(-) Apomorphine hydrochloride hemihydrate", "Suloctidil",
+          "Ebselen", "Nisoldipine", "Argatroban", "Dimethisoquin hydrochloride",
+          "Pentetic acid", "Pentamidine isethionate", "Pyrvinium pamoate") ~ "0.001", 
+        TRUE ~ "0.5")
+```
+
+Add new column with P. aeruginosa planktonic growth effects
+
+```{r}
+maier_et_al_even_further_extended3_df$P_aeruginosa_planktonic <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        c("Cefotaxime sodium salt", "Aztreonam", "Cefoperazone dihydrate",
+          "Colistin sulfate", "Dirithromycin", "Ceftazidime pentahydrate",
+          "Piperacillin sodium salt", "Azlocillin sodium salt",
+          "Cefsulodin sodium salt", "Cefepime hydrochloride",
+          "Azithromycin", "Ciprofloxacin hydrochloride monohydrate",
+          "Dihydrostreptomycin sulfate", "Gentamicine sulfate",
+          "Norfloxacin", "Lomefloxacin hydrochloride", "Streptomycin sulfate",
+          "Amikacin hydrate", "Tosufloxacin hydrochloride", "Tobramycin",
+          "Sisomicin sulfate", "Merbromin", "Clinafloxacin", "Apramycin",
+          "Sarafloxacin", "Rifabutin", "Gatifloxacin", "Moxifloxacin",
+          "Fleroxacin", "Enoxacin", "Sparfloxacin", "Rifaximin") ~ "0.001", 
+        TRUE ~ "0.5")
+```
+
+Add new columns with WHO-listed isolates of A. baumannii, E. coli, K. pneumoniae & P. aeruginosa
+
+```{r}
+hind_et_al_Abaumannii1_df <- read_xlsx("../data/hind_et_al_mdr_prestwick.xlsx", sheet = 1)
+hind_et_al_Abaumannii2_df <- read_xlsx("../data/hind_et_al_mdr_prestwick.xlsx", sheet = 2)
+hind_et_al_Kpneumoniae1_df <- read_xlsx("../data/hind_et_al_mdr_prestwick.xlsx", sheet = 3)
+hind_et_al_Kpneumoniae2_df <- read_xlsx("../data/hind_et_al_mdr_prestwick.xlsx", sheet = 4)
+hind_et_al_Ecoli_df <- read_xlsx("../data/hind_et_al_mdr_prestwick.xlsx", sheet = 5)
+hind_et_al_Paeruginosa_df <- read_xlsx("../data/hind_et_al_mdr_prestwick.xlsx", sheet = 6)
+
+maier_et_al_even_further_extended3_df$A_baumannii_NCTC_13301 <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        hind_et_al_Abaumannii1_df$chemical_name ~ "0.001", 
+        TRUE ~ "0.5")
+
+maier_et_al_even_further_extended3_df$A_baumannii_WP_487 <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        hind_et_al_Abaumannii2_df$chemical_name ~ "0.001", 
+        TRUE ~ "0.5")
+
+maier_et_al_even_further_extended3_df$K_pneumoniae_NCTC_13439 <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        hind_et_al_Kpneumoniae1_df$chemical_name ~ "0.001", 
+        TRUE ~ "0.5")
+
+maier_et_al_even_further_extended3_df$K_pneumoniae_KPC_119 <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        hind_et_al_Kpneumoniae2_df$chemical_name ~ "0.001", 
+        TRUE ~ "0.5")
+
+maier_et_al_even_further_extended3_df$E_coli_ATCC_BAA_2469 <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        hind_et_al_Ecoli_df$chemical_name ~ "0.001", 
+        TRUE ~ "0.5")
+
+maier_et_al_even_further_extended3_df$P_aeruginosa_NCTC_13437 <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        hind_et_al_Paeruginosa_df$chemical_name ~ "0.001", 
+        TRUE ~ "0.5")
+```
+
+
+Add new column with SARS-Cov2 effects
+
+```{r}
+touret_et_al_df <- read_xlsx("../data/touret_et_al_sars_cov2_Supp_Table2.xlsx") %>% 
+    within(Chemical.name[Chemical.name == "Merbromin disodium salt"] <- "Merbromin") %>% 
+    within(Chemical.name[Chemical.name == "Rimantadine hydrochloride"] <- "Rimantadine Hydrochloride") %>% 
+    within(Chemical.name[Chemical.name == "Trihexyphenidyl-D,L hydrochloride"] <- "Trihexyphenidyl-D,L Hydrochloride")
+
+maier_et_al_even_further_extended3_df$Sars_cov2 <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        touret_et_al_df$Chemical.name ~ "0.001", 
+        TRUE ~ "0.5")
+```
+
+Add new column with coxsackievirus B3 effects
+
+```{r}
+maier_et_al_even_further_extended3_df$Coxsackie_virus_b3 <- 
+    case_when(maier_et_al_even_further_extended3_df$chemical_name %in% 
+        c("Pirlindole mesylate", "Fluoxetine hydrochloride", "Formoterol fumarate",
+          "Dibucaine", "Zuclopenthixol dihydrochloride") ~ "0.001", 
+        TRUE ~ "0.5")
+```
+
+
+Make binary matrix
+
+```{r}
+maier_bin_mat <- apply(maier_et_al_even_further_extended3_df[,-c(1:5)], 2, as.numeric)
+colnames(maier_bin_mat) <- colnames(maier_et_al_even_further_extended3_df[,-c(1:5)])
+rownames(maier_bin_mat) <- maier_et_al_even_further_extended3_df$InChiKey
+
+# trick to convert to numeric matrix
+maier_bin_mat_num <- 1 * as.matrix(maier_bin_mat < 0.1) # 0.01
+
+# maier_bin_mat_num <- 1 * as.matrix(maier_bin_mat < 0.01) + 
+#     0.5 * as.matrix(maier_bin_mat < 0.1) 
+```
+
+Check for all 0 or NA-only rows
+```{r}
+all_zero_na_ids <- which(apply(maier_bin_mat_num, 1, function(x) all(x == 0, na.rm = TRUE)))
+length(all_zero_na_ids)
+```
+
+Check for number of NAs per column
+```{r}
+apply(maier_bin_mat_num, 2, function(x) length(which(is.na(x))))
+```
+
+Add pseudo columns for each compound with no effect at all
+
+```{r}
+maier_bin_mat_num
+
+dummy_columns_mat <- sapply(all_zero_na_ids, function(i){
+    column <- rep(0, nrow(maier_bin_mat_num))
+    column[i] <- 1
+    return(column)
+})
+
+colnames(dummy_columns_mat) <- paste("dummy", seq(length(all_zero_na_ids)), sep = "_")
+
+maier_bin_mat_incl_dummy_num <- cbind(maier_bin_mat_num, dummy_columns_mat)
+```
+
+Impute missing values by median
+```{r}
+maier_bin_mat_num_imp <- as.data.frame(maier_bin_mat_incl_dummy_num)
+
+maier_bin_mat_num_imp[is.na(maier_bin_mat_num_imp)] <- 
+    median(maier_bin_mat_incl_dummy_num, na.rm = TRUE)
+
+rownames(maier_bin_mat_num_imp) <- rownames(maier_bin_mat_incl_dummy_num)
+```
+
+Try out logistic PCA
+```{r}
+logpca_cv = cv.lpca(maier_bin_mat_num_imp, ks = 2, ms = 1:10)
+plot(logpca_cv)
+```
+
+Plot scatterplot of PCs
+```{r}
+logpca_model = logisticPCA(maier_bin_mat_num_imp, k = 2, m = 5) #which.min(logpca_cv))
+logpca_model_df <- as_tibble(logpca_model$PC, rownames = "drug_name") %>% 
+    mutate(drug_class = maier_et_al_further_extended_df$drug_class)
+
+ggplot(logpca_model_df, aes(V1, V2)) + 
+    geom_point(aes(color = drug_class)) + 
+    scale_color_brewer(palette = "Set3") +
+    ggtitle("Logistic PCA")
+```
+
+Look at loading of different bugs
+```{r, eval=FALSE}
+# this doesnt work anymore after addition of dummy columns
+logpca_model_loadings_df <- as_tibble(logpca_model$U) %>% 
+  mutate(species = colnames(maier_bin_mat_num)) %>% 
+  mutate(family = sub(' .+', '', species)) %>% 
+  within(family[grep("E.|E_coli", family)] <- "Escherichia") %>% 
+  within(family[grep("Cal|Cneo|Cgat", family)] <- "Candida") %>% 
+  within(family[grep("Scer", family)] <- "Saccharomyces") %>% 
+  within(family[grep("Aspergillus", family)] <- "Aspergillus") %>% 
+  within(family[grep("Fusarium", family)] <- "Fusarium") %>% 
+  within(family[grep("Lichtheimia", family)] <- "Lichtheimia") %>% 
+  within(family[grep("Lomentospora", family)] <- "Lomentospora") %>%
+  within(family[grep("Rhizopus", family)] <- "Rhizopus") %>% 
+  within(family[grep("N_g", family)] <- "Neisseria") %>% 
+  within(family[grep("M_", family)] <- "Mycobacterium")  %>% 
+  within(family[grep("aeru", family)] <- "Pseudomonas") %>% 
+  within(family[grep("pneu", family)] <- "Klebsiella") %>% 
+  within(family[grep("baumannii", family)] <- "Acinetobacter") 
+    
+
+    
+
+n <- length(table(logpca_model_loadings_df$family))
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+ggplot(logpca_model_loadings_df, aes(V1, V2)) + 
+    geom_point(aes(color = family)) + 
+    scale_color_manual(values = col_vector) +
+    #ggrepel::geom_text_repel(aes(label = species), data = filter(logpca_model_loadings_df, grepl('aerobic', species))) +
+    #geom_point(color = "black", data = filter(logpca_model_loadings_df, grepl('K_p', species))) +
+    ggtitle("Logistic PCA loadings")
+```
+
+
+Simplfy column names
+```{r}
+colnames(maier_bin_mat_num_imp) <- sub("\\)", "", sub(".+\\(", "", colnames(maier_bin_mat_num_imp)))
+colnames(maier_bin_mat_num_imp)[grep("aerobic", colnames(maier_bin_mat_num_imp))] <- "Ecoli_BW25113_aerobic"
+```
+
+
+Export dataset
+
+```{r}
+# write_csv(as.data.frame(maier_bin_mat_num), 
+#           path = "../output/maier_stokes_combined_matrix_inchikeys.csv")
+write.csv(maier_bin_mat_num_imp, 
+          file = "../output/maier_many_combined_matrix_dummy_cols_inchikeys_imputed.csv", 
+          quote = FALSE, row.names = TRUE)
+```
+
+
+Make two sign-level matrix
+
+```{r}
+maier_bin_mat_2num <- 0.5* as.matrix(maier_bin_mat < 0.01) + 
+     0.5 * as.matrix(maier_bin_mat < 0.1) 
+```
+
+Simplfy column names
+```{r}
+colnames(maier_bin_mat_2num) <- sub("\\)", "", sub(".+\\(", "", colnames(maier_bin_mat_2num)))
+colnames(maier_bin_mat_2num)[grep("aerobic", colnames(maier_bin_mat_2num))] <- "Ecoli_BW25113_aerobic"
+```
+
+
+Impute missing values by median
+```{r}
+maier_bin_mat_2num_imp <- as.data.frame(maier_bin_mat_2num)
+
+maier_bin_mat_2num_imp[is.na(maier_bin_mat_2num_imp)] <- 
+    median(maier_bin_mat_2num, na.rm = TRUE)
+
+rownames(maier_bin_mat_2num_imp) <- rownames(maier_bin_mat_2num)
+```
+
+
+Export dataset
+
+```{r}
+# write_csv(as.data.frame(maier_bin_mat_num), 
+#           path = "../output/maier_stokes_combined_matrix_inchikeys.csv")
+write.csv(maier_bin_mat_2num_imp, 
+          file = "../output/maier_stokes_combined_2_level_matrix_inchikeys_imputed.csv", 
+          quote = FALSE, row.names = TRUE)
+```
+
+
+Strict cut-off dataset
+
+```{r}
+maier_bin_mat_strict_num <- 1* as.matrix(maier_bin_mat < 0.01) 
+```
+
+Simplfy column names
+```{r}
+colnames(maier_bin_mat_strict_num) <- sub("\\)", "", sub(".+\\(", "", colnames(maier_bin_mat_strict_num)))
+colnames(maier_bin_mat_strict_num)[length(colnames(maier_bin_mat_strict_num))] <- "Ecoli_BW25113_aerobic"
+```
+
+
+Impute missing values by median
+```{r}
+maier_bin_mat_strict_num_imp <- as.data.frame(maier_bin_mat_strict_num)
+
+maier_bin_mat_strict_num_imp[is.na(maier_bin_mat_strict_num_imp)] <- 
+    median(maier_bin_mat_strict_num, na.rm = TRUE)
+
+rownames(maier_bin_mat_strict_num_imp) <- rownames(maier_bin_mat_strict_num)
+```
+
+
+Export dataset
+
+```{r}
+# write_csv(as.data.frame(maier_bin_mat_num), 
+#           path = "../output/maier_stokes_combined_matrix_inchikeys.csv")
+write.csv(maier_bin_mat_strict_num_imp, 
+          file = "../output/maier_stokes_combined_strict_level_matrix_inchikeys_imputed.csv", 
+          quote = FALSE, row.names = TRUE)
+```

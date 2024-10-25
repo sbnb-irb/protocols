@@ -1,0 +1,339 @@
+---
+title: "Make microbiome/bacteria dataset ready for signature procedure (log-transformed p-values)"
+author: "Nils Kurzawa"
+date: "4/11/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(readxl)
+library(readr)
+library(pheatmap)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+Read in Maier et al. datasets
+
+```{r}
+maier_et_al_df <- read_xlsx("../data/maier_41586_2018_BFnature25979_MOESM5_ESM.xlsx", sheet = 1)
+maier_et_al_add_df <- read_xlsx("../data/maier_additional_41586_2018_BFnature25979_MOESM8_ESM.xlsx", sheet = 1)
+```
+
+Join Maier datasets
+
+```{r}
+maier_et_al_full_df <- maier_et_al_df %>% 
+  left_join(maier_et_al_add_df[,-c(2:4)], by = "prestwick_ID") %>% 
+  filter(prestwick_ID != "Prestw-406")
+```
+
+
+Read in compound name mapping
+```{r}
+compound_name_df <- read_csv("../data/compound_name_smiles_inchi_df.csv") %>% 
+    within(InChiKey[compound_name == "Lymecycline"] <- "PZTCVADFMACKLU-UEPZRUIBSA-N") %>% 
+    within(InChiKey[compound_name == "(S)-(-)-Cycloserine"] <- "DYDCUQKUCUHJBH-REOHCLBHSA-N") %>% 
+    within(InChiKey[compound_name == "(R)-Propranolol hydrochloride"] <- "ZMRUPTIKESYGQW-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "(S)-propranolol hydrochloride"] <- "ZMRUPTIKESYGQW-UQKRIMTDSA-N") %>% 
+    within(InChiKey[compound_name == "(R)-(+)-Atenolol"] <- "METKIMKYRPQLGS-GFCCVEGCSA-N") %>%
+    within(InChiKey[compound_name == "(S)-(-)-Atenolol"] <- "METKIMKYRPQLGS-LBPRGKRZSA-N") %>%
+    within(InChiKey[compound_name == "Tetracycline hydrochloride"] <- "YCIHPQHVWDULOY-FMZCEJRJSA-N") %>%
+    within(InChiKey[compound_name == "Methyldopate hydrochloride"] <- "QSRVZCCJDKYRRF-YDALLXLXSA-N") %>%
+    within(InChiKey[compound_name == "Proparacaine hydrochloride"] <- "BFUUJUGQJUTPAF-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Sulfaquinoxaline sodium salt"] <- "WXUQBKOBXREBBX-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Methapyrilene hydrochloride"] <- "BONORRGKLJBGRV-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "(+) -Levobunolol hydrochloride"] <- "DNTDOBSIBZKFCP-UTONKHPSSA-N") %>% 
+    within(InChiKey[compound_name == "Buflomedil hydrochloride"] <- "ZDPACSAHMZADFZ-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Fursultiamine Hydrochloride"] <- "OPGOLNDOMSBSCW-CLNHMMGSSA-N") %>% 
+    within(InChiKey[compound_name == "Alexidine dihydrochloride"] <- "BRJJFBHTDVWTCJ-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Scopolamin-N-oxide hydrobromide"] <- "MGNNYKWRWHQLCR-RDYQINQZSA-N") %>% 
+    within(InChiKey[compound_name == "R(-) Apomorphine hydrochloride hemihydrate"] <- "DQQCJDBYNZMPOA-FFXKMJQXSA-N") %>% 
+    within(InChiKey[compound_name == "THIP Hydrochloride"] <- "ZDZDSZQYRBZPNN-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Molindone hydrochloride"] <- "GQWNECFJGBQMBO-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Ozagrel hydrochloride"] <- "CWKFWBJJNNPGAM-IPZCTEOASA-N") %>% 
+    within(InChiKey[compound_name == "Riluzole hydrochloride"] <- "QEAOELIJQRYJJS-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "DO 897/99"] <- "LUGFRGZVWVEDNU-UHFFFAOYSA-N") %>% 
+    within(InChiKey[compound_name == "Indatraline hydrochloride"] <- "QICQDZXGZOVTEF-MELYUZJYSA-N") %>% 
+    within(InChiKey[compound_name == "Ipsapirone"] <- "TZJUVVIWVWFLCD-UHFFFAOYSA-N") %>% 
+    filter(prestwick_id != "Prestw-406") 
+    
+```
+Add compound ids to joined dataset
+
+```{r}
+maier_et_al_full_id_df <- maier_et_al_full_df %>% 
+    left_join(compound_name_df %>% dplyr::select(prestwick_ID = prestwick_id, InChiKey),
+              by = "prestwick_ID") %>% 
+    dplyr::select(InChiKey, everything()) %>% 
+    filter(!is.na(InChiKey))
+```
+
+
+Make numeric matrix
+
+```{r}
+maier_bin_mat <- apply(maier_et_al_full_id_df[,-c(1:5)], 2, as.numeric)
+colnames(maier_bin_mat) <- colnames(maier_et_al_full_id_df[,-c(1:5)])
+rownames(maier_bin_mat) <- maier_et_al_full_id_df$InChiKey
+
+# log-transform matrix matrix
+maier_bin_mat_num <- -log10(as.matrix(maier_bin_mat))
+```
+
+Heatmap
+
+```{r}
+pheatmap(maier_bin_mat_num)
+```
+
+Column-wise scaling
+
+```{r}
+maier_bin_mat_num_scaled <- apply(maier_bin_mat_num, 2, scale)
+colnames(maier_bin_mat_num_scaled) <- colnames(maier_bin_mat_num)
+rownames(maier_bin_mat_num_scaled) <- rownames(maier_bin_mat_num)
+```
+
+```{r}
+pheatmap(maier_bin_mat_num_scaled)
+```
+
+Impute missing values by median
+```{r}
+maier_bin_mat_num_imp <- as.data.frame(maier_bin_mat_num_scaled)
+
+maier_bin_mat_num_imp[is.na(maier_bin_mat_num_imp)] <- 
+    median(maier_bin_mat_num, na.rm = TRUE)
+
+rownames(maier_bin_mat_num_imp) <- rownames(maier_bin_mat_num_scaled)
+```
+
+```{r}
+pheatmap(maier_bin_mat_num_imp)
+```
+
+
+PCA
+```{r}
+pca_obj = prcomp(maier_bin_mat_num_imp)
+pca_df <- as_tibble(pca_obj$x, rownames = "drug_name") %>% 
+    mutate(drug_class = maier_et_al_full_id_df$drug_class)
+
+ggplot(pca_df, aes(PC1, PC3)) + 
+    geom_point(aes(color = drug_class)) + 
+    scale_color_brewer(palette = "Set3") +
+    ggtitle("PCA")
+```
+
+Look at loading of different bugs
+```{r, eval=FALSE}
+# this doesnt work anymore after addition of dummy columns
+pca_rotations_df <- as_tibble(pca_obj$rotation, rownames = 'strains') %>% 
+  mutate(species = colnames(maier_bin_mat_num)) %>% 
+  mutate(family = sub(' .+', '', species)) %>% 
+  within(family[grep("E.|E_coli", family)] <- "Escherichia") %>% 
+  within(family[grep("Cal|Cneo|Cgat", family)] <- "Candida") %>% 
+  within(family[grep("Scer", family)] <- "Saccharomyces") %>% 
+  within(family[grep("Aspergillus", family)] <- "Aspergillus") %>% 
+  within(family[grep("Fusarium", family)] <- "Fusarium") %>% 
+  within(family[grep("Lichtheimia", family)] <- "Lichtheimia") %>% 
+  within(family[grep("Lomentospora", family)] <- "Lomentospora") %>%
+  within(family[grep("Rhizopus", family)] <- "Rhizopus") %>% 
+  within(family[grep("N_g", family)] <- "Neisseria") %>% 
+  within(family[grep("M_", family)] <- "Mycobacterium")  %>% 
+  within(family[grep("aeru", family)] <- "Pseudomonas") %>% 
+  within(family[grep("pneu", family)] <- "Klebsiella") %>% 
+  within(family[grep("baumannii", family)] <- "Acinetobacter") 
+    
+
+n <- length(table(pca_rotations_df$family))
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'qual',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+
+ggplot(pca_rotations_df, aes(PC1, PC2)) + 
+    geom_point(aes(color = family)) + 
+    scale_color_manual(values = col_vector) +
+    ggtitle("PCA rotations")
+```
+
+
+Simplfy column names
+```{r}
+colnames(maier_bin_mat_num_imp) <- sub("\\)", "", sub(".+\\(", "", colnames(maier_bin_mat_num_imp)))
+```
+
+
+Export dataset
+
+```{r}
+write.csv(maier_bin_mat_num_imp, 
+          file = "../output/maier_matrix_log10_transformed_scaled_pvals.csv", 
+          quote = FALSE, row.names = TRUE)
+```
+
+# Add yeast data from Spitzer et al.
+
+```{r}
+spitzer_transformed_mat_df <- read_csv("../output/spitzer_scaled_log_transformed_pval.csv") %>% 
+  rename("InChiKey" = ...1)
+```
+```{r}
+maier_bin_mat_num_imp_df <- as_tibble(maier_bin_mat_num_imp, rownames = "InChiKey")
+
+maier_spitzer_df <- left_join(
+  maier_bin_mat_num_imp_df, spitzer_transformed_mat_df, by = "InChiKey") %>% 
+  as.data.frame() %>% 
+  tibble::column_to_rownames(var = 'InChiKey')
+```
+
+Impute missing values by median
+```{r}
+maier_spitzer_df[is.na(maier_spitzer_df)] <- 
+    median(as.matrix(maier_spitzer_df), na.rm = TRUE)
+
+```
+
+Heatmap
+```{r}
+pheatmap(maier_spitzer_df)
+```
+
+
+PCA
+```{r}
+ms_pca_obj = prcomp(maier_spitzer_df)
+ms_pca_df <- as_tibble(pca_obj$x, rownames = "drug_name") %>% 
+    mutate(drug_class = maier_et_al_full_id_df$drug_class)
+
+ggplot(ms_pca_df, aes(PC1, PC3)) + 
+    geom_point(aes(color = drug_class)) + 
+    scale_color_brewer(palette = "Set3") +
+    ggtitle("PCA")
+```
+
+Write output
+```{r}
+write.csv(maier_spitzer_df,
+          file = "../output/maier_spitzer_matrix_log10_transformed_scaled_pvals.csv", 
+          quote = FALSE, row.names = TRUE)
+```
+
+```{r}
+maier_spitzer_df <- read_csv('../output/maier_spitzer_matrix_log10_transformed_scaled_pvals.csv') %>% 
+  rename('InChiKey' = ...1)
+```
+```{r}
+maier_spitzer_fil_df <- maier_spitzer_df %>% 
+  gather(key, value, -InChiKey) %>% 
+  group_by(InChiKey) %>% 
+  mutate(n_min_effect = length(which(value > 0.375))) %>% 
+  ungroup() %>% 
+  filter(n_min_effect > 0) %>% 
+  dplyr::select(-n_min_effect) %>% 
+  spread(key, value)
+
+write.csv(maier_spitzer_fil_df,
+          file = "../output/maier_spitzer_matrix_log10_transformed_scaled_pvals_filtered_minimal_effect.csv", 
+          quote = FALSE, row.names = TRUE)
+
+```
+
+
+
+# Add MDR data from Hind et al.
+
+```{r}
+hind_transformed_mat_df <- read_csv("../output/hind_scaled_log_transformed_pval.csv") %>% 
+  rename("InChiKey" = ...1)
+```
+
+```{r}
+maier_spitzer_tbl <- as_tibble(maier_spitzer_df, rownames = "InChiKey")
+
+maier_spitzer_hind_df <- left_join(
+  maier_spitzer_tbl, hind_transformed_mat_df, by = "InChiKey") %>% 
+  as.data.frame() %>% 
+  tibble::column_to_rownames(var = 'InChiKey')
+```
+
+```{r}
+pheatmap(maier_spitzer_hind_df)
+```
+
+# Add Yousfi data
+
+```{r}
+yousfi_transformed_mat_df <- read_csv("../output/yousfi_scaled_log_transformed_pval.csv") %>% 
+  rename("InChiKey" = ...1)
+```
+
+```{r}
+maier_spitzer_hind_tbl <- as_tibble(maier_spitzer_hind_df, rownames = "InChiKey")
+
+maier_spitzer_hind_yousfi_df <- left_join(
+  maier_spitzer_hind_tbl, yousfi_transformed_mat_df, by = "InChiKey") %>% 
+  as.data.frame() %>% 
+  tibble::column_to_rownames(var = 'InChiKey')
+```
+
+```{r}
+pheatmap(maier_spitzer_hind_yousfi_df)
+```
+
+# Add Foerster data
+
+```{r}
+foerster_transformed_mat_df <- read_csv("../output/foerster_scaled_log_transformed_pval.csv") %>% 
+  rename("InChiKey" = ...1)
+```
+
+```{r}
+maier_spitzer_hind_yousfi_tbl <- as_tibble(maier_spitzer_hind_yousfi_df, rownames = "InChiKey")
+
+maier_spitzer_hind_yousfi_foerster_df <- left_join(
+  maier_spitzer_hind_yousfi_tbl, foerster_transformed_mat_df, by = "InChiKey") %>% 
+  as.data.frame() %>% 
+  tibble::column_to_rownames(var = 'InChiKey')
+```
+
+```{r}
+pheatmap(maier_spitzer_hind_yousfi_df)
+```
+
+# Fix max value per column to median of gut microbiota strains
+
+```{r}
+spitzer_hind_yousfi_foerster_max_normalized_df <- 
+  apply(maier_spitzer_hind_yousfi_foerster_df[,45:67], 2, function(x, thres = 3.2){
+  max_col_val <-  max(x)
+  divisor <- max_col_val/thres
+  x_new <- x/divisor
+  return(x_new)
+})
+```
+
+Combine to get new final matrix
+
+```{r}
+full_mat <- cbind(maier_spitzer_hind_yousfi_foerster_df[,1:44],
+                  spitzer_hind_yousfi_foerster_max_normalized_df)
+```
+
+```{r}
+pheatmap(full_mat)
+```
+
+Write output
+
+```{r}
+write.csv(full_mat,
+          file = "../output/maier_spitzer_hind_yousfi_foerster_matrix_max_scaled_log10_pvals.csv", 
+          quote = FALSE, row.names = TRUE)
+```
