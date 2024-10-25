@@ -1,0 +1,21 @@
+command:
+python3 run.py \
+-i /aloy/home/epareja/TFM/Script/LINCS/6_Rebuttal_Protocols/infiles/ \
+-o /aloy/home/epareja/TFM/Script/LINCS/6_Rebuttal_Protocols/out/preprocess.h5 \
+-mp /aloy/home/epareja/TFM/Script/LINCS/6_Rebuttal_Protocols/models_out/ \
+-m fit \
+-c 3 \
+-pval 2 
+
+#####
+The user need to download different files from LINCS database https://clue.io/data/CMap2020#LINCS2020 
+- 'level3_beta_trt_cp_n1805898x12328.gctx'
+- 'level3_beta_ctl_n188708x12328.gctx'
+-  instinfo_beta
+-  siginfo_beta
+
+Additionally, the user need to create a Json file relating the broad_id with inchikeys (lincs_map.json)
+
+#####
+IMPORTANT: The script should be paralelized for running in a cluster, so it is possible to run the different batches in parallel 
+(if not if could take a lot of time -->  2301 batches X 10 min/batch = 383 hours (aprox) = 16 days) 
