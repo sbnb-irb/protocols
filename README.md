@@ -31,7 +31,7 @@ In the **Chemical Checker Protocols Repository**, we illustrate the functioning 
 
 ### Folders and Files
 - `notebooks`: iPython notebooks (4) for the integration of new bioactivity data using the defined data curation pipeline.
-- `data`: Input bioactivity data.
+- `data`: links to download the preprocessed bioactivity data to reproduce the results in the manuscript.
 
-The local directories of the CC are divided in full and reference sets of compounds. The full directory contains the computed signatures (from 0 to III) of the complete sets of small molecules for each CC space. The reference set includes a non-redundant subset of the data, computed using the distance matrix among all compounds. 
+The generated local directories of the CC are divided in full and reference sets of compounds. The full directory contains the computed signatures (from 0 to III) of the complete sets of small molecules for each CC space. The reference set includes a non-redundant subset of the data, computed using the distance matrix among all compounds. 
 
