@@ -21,7 +21,7 @@ Concepts and methods are best described in the original CC publication, [Duran-F
 To explore the Signaturizers repository (i.e., to generate CC signatures for any chemical compound of interest), please visit the [original version](https://gitlabsbnb.irbbarcelona.org/packages/signaturizer) or the [latest and stereochemically-aware models](https://gitlabsbnb.irbbarcelona.org/packages/signaturizer3d).
 
 ## CC Protocols Publication
-Detailed explanations of the CC Protocols are best described in the corresponding publication, [*Comajuncosa-Creus et al. 2024*](https://google.com).
+Detailed explanations of the CC Protocols are best described in the corresponding publication, [*Comajuncosa-Creus et al. 2024*](https://www.biorxiv.org/content/10.1101/2024.12.04.626832v1).
 
 ## Repository Structure
 In the **Chemical Checker Protocols Repository**, we illustrate the functioning of the protocol through four specific examples, including:
