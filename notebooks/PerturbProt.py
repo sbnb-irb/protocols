@@ -14,30 +14,21 @@
 # ---
 
 # %%
+# Imports
 import os
-import wget
-import tarfile
-
-# Modify PATH at will
-PATH_TO_InDATA = "../data/"
-
-# Create path
-os.makedirs(PATH_TO_InDATA, exist_ok=True)
-
-# %%
-# Specify the location of the CC config file. 
-os.environ['CC_CONFIG'] = '/scratch/sbnb/sayala/chemical_checker/setup/cc_config.json'
-
-from chemicalchecker import ChemicalChecker
-ChemicalChecker.set_verbosity('DEBUG') # CRITICAL, ERROR, WARN, INFO or DEBUG
 import numpy as np
 import pandas as pd
-import json
-# %matplotlib inline
+from chemicalchecker import ChemicalChecker
 
-# %%
+# Define variables and paths
 local_cc_dir = '../local_PertProt'
 PATH_TO_DATA = "/scratch/sbnb/sayala/cc_data/data"  # See Download_Data.ipynb // Procedure step 3
+os.environ['CC_CONFIG'] = '/scratch/sbnb/sayala/chemical_checker/setup/cc_config.json'
+
+# Apply general settings
+#%matplotlib inline
+os.makedirs(PATH_TO_DATA, exist_ok=True)
+ChemicalChecker.set_verbosity('DEBUG') # CRITICAL, ERROR, WARN, INFO or DEBUG
 cc_local = ChemicalChecker(local_cc_dir, dbconnect=False, custom_data_path=PATH_TO_DATA)
 
 # %% [markdown]
@@ -47,11 +38,6 @@ cc_local = ChemicalChecker(local_cc_dir, dbconnect=False, custom_data_path=PATH_
 # Load the raw binary data
 # Rows: compounds
 # Columns: Uniprot IDs
-import numpy as np
-import pandas as pd
-import json
-# %matplotlib inline
-
 all_proteins_f = "../data/PerturbProt/all_studies_wide.csv"
 deps_f = "../data/PerturbProt/all_studies_deps_wide.csv"
 deepcovermoa_f = "../data/PerturbProt/deepcovermoa_wide.csv"
@@ -87,7 +73,7 @@ df_deepcovermoa.head()
 # Dataset Names
 dataset_deps = 'PertProtDEPs'
 dataset_all = 'PertProtAll'
-dataset_dcmoa = 'DeepCoverMoa'
+dataset_dcmoa = 'PertProtDCMoa'
 
 # Set sanitizer parameters to avoid expensive filtering that might cause issues
 sanitizer_kwargs = {
@@ -246,92 +232,170 @@ neig1_deps.shape
 # %%
 np.min(np.array(sign1_deps).flatten()), np.max(np.array(sign1_deps).flatten())
 
-# %% [markdown]
-# ## sign2 ##
+# %% [markdown] jp-MarkdownHeadingCollapsed=true
+# ### AllProt
 
 # %%
-# Dataset Name
-dataset = 'D6.001'
-
-# Get sign1
-sign1 = cc_local.get_signature('sign1', 'full', dataset)
-
-# Get neig1
-neig1 = cc_local.get_signature('neig1', 'full', dataset)  # By default, all vs ref
-
-# Instantiation of sign2
-sign2 = cc_local.signature(dataset, 'sign2')
-
 # Cleaning both full and reference datasets. This is crucial!
-sign2.clear_all()
+sign1_allprot.clear_all()
 
-# Fit sign2 given sign1 & neig1
-sign2.fit(sign1, neig1, oos_predictor=False)
-
-# %%
-sign2.shape
+# Fitting sign1
+sign1_allprot.fit(sign0_allprot)
 
 # %%
-# Instantiation of sign2
-sign2 = cc_local.signature(dataset, 'sign2')
+sign1_allprot.shape
 
-# Instantiation of diag2 (diagnosis plots)
-diag2 = sign2.diagnosis()
+# %%
+# Instantiation of diag1 (diagnosis plots)
+diag1_allprot = sign1_allprot.diagnosis()
 
 # Plot medium & small diagnosis plots
-diag2.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+diag1_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %% jupyter={"outputs_hidden": true}
+# Instantiation of neig1
+neig1_allprot = cc_local.get_signature("neig1", "full", dataset_all)  # It will take the reference anyway...
+
+# Cleaning both full and reference. This is crucial!
+neig1_allprot.clear_all()
+
+# Fitting neig1
+neig1_allprot.fit(sign1_deps)
 
 # %%
-np.min(np.array(sign2).flatten()), np.max(np.array(sign2).flatten())
+neig1_allprot.shape
+
+# %%
+np.min(np.array(sign1_allprot).flatten()), np.max(np.array(sign1_allprot).flatten())
+# %% [markdown]
+# ## sign2
+
+# %%
+# Instantiation of sign1 data structures for the new spaces: full and references
+sign2_deps = cc_local.signature(dataset_deps, 'sign2')
+sign2_allprot = cc_local.signature(dataset_all, 'sign2')
+sign2_dcmoa = cc_local.signature(dataset_dcmoa, 'sign2')
 
 # %% [markdown]
-# ## sign3 ##
+# ### DeepCoverMoa
 
 # %%
-# Dataset Name
-dataset = 'D6.001'
+# Cleaning both full and reference datasets. This is crucial!
+sign2_dcmoa.clear_all()
+
+# Fit sign2 given sign1 & neig1
+sign2_dcmoa.fit(sign1_dcmoa, neig1_dcmoa, oos_predictor=False)
+
+# %%
+sign2_dcmoa.shape
+
+# %%
+# Instantiation of diag2 (diagnosis plots)
+diag2_dcmoa = sign2_dcmoa.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag2_dcmoa.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign2_dcmoa).flatten()), np.max(np.array(sign2_dcmoa).flatten())
+
+# %% [markdown]
+# ### DEPs
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign2_deps.clear_all()
+
+# Fit sign2 given sign1 & neig1
+sign2_deps.fit(sign1_deps, neig1_deps, oos_predictor=False)
+
+# %%
+sign2_deps.shape
+
+# %%
+# Instantiation of diag2 (diagnosis plots)
+diag2_deps = sign2_deps.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag2_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign2_deps).flatten()), np.max(np.array(sign2_deps).flatten())
+
+# %% [markdown]
+# ### AllProt
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign2_allprot.clear_all()
+
+# Fit sign2 given sign1 & neig1
+sign2_allprot.fit(sign1_allprot, neig1_allprot, oos_predictor=False)
+
+# %%
+sign2_allprot.shape
+
+# %%
+# Instantiation of diag2 (diagnosis plots)
+diag2_allprot = sign2_allprot.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag2_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign2_allprot).flatten()), np.max(np.array(sign2_allprot).flatten())
+
+# %% [markdown]
+# ## sign3
+
+# %%
+# Instantiation of sign1 data structures for the new spaces: full and references
+sign3_deps = cc_local.signature(dataset_deps, 'sign3')
+sign3_allprot = cc_local.signature(dataset_all, 'sign3')
+sign3_dcmoa = cc_local.signature(dataset_dcmoa, 'sign3')
+
+# %% [markdown]
+# ### DeepCoverMoa
+
+# %%
 
 # Get CC universe
-cc_universe = []
+cc_universe_dcmoa = []
 for dat in cc_local.datasets:
-    if dat != dataset and dat.endswith('001'):
-        cc_universe.extend(cc_local.get_signature('sign2', 'full', dat).keys)
-cc_universe = set(cc_universe)
-
-# Get sign2
-sign2 = cc_local.signature(dataset, 'sign2')
+    if dat != dataset_dcmoa and dat.endswith('001'):
+        cc_universe_dcmoa.extend(cc_local.get_signature('sign2', 'full', dat).keys())
+cc_universe_dcmoa = set(cc_universe_dcmoa)
 
 # Get D6 molecules
-d6_molecules = set(sign2.keys)
+d6_molecules_dcmoa = set(sign2_dcmoa.keys())
 
-print("Number of molecules in the CC universe: " + str(len(cc_universe)))
-print("Number of molecules in D6 sign2: " + str(len(d6_molecules)))
-print("Intersection CC & D6: " + str(len(cc_universe.intersection(d6_molecules))))
+print("Number of molecules in the CC universe: " + str(len(cc_universe_dcmoa)))
+print("Number of molecules in D6 sign2: " + str(len(d6_molecules_dcmoa)))
+print("Intersection CC & D6: " + str(len(cc_universe_dcmoa.intersection(d6_molecules_dcmoa))))
 
 # %%
-# Instantiation of sign3
-sign3 = cc_local.signature(dataset, 'sign3')
-sign3.clear_all()
+# Cleaning both full and reference datasets. This is crucial!
+sign3_dcmoa.clear_all()
 
 # Create a list of sign2 to feed sign3 -- using the 25 CC spaces & D6
-sign2_list = list()
+sign2_list_dcmoa = list()
 
 # For each CC space
 for ds in cc_local.coordinates:
     ds += '.001'
-    sign2_list.append(cc_local.get_signature('sign2', 'full', ds))
+    sign2_list_dcmoa.append(cc_local.get_signature('sign2', 'full', ds))
 
 # Append the new D6 space
-sign2_list.append(cc_local.get_signature('sign2','full', dataset))
+sign2_list_dcmoa.append(cc_local.get_signature('sign2','full', dataset_dcmoa))
 
 # In total, we now have 26 spaces
-print(len(sign2_list))
+print(len(sign2_list_dcmoa))
 
 # Get D6 sign1
-sign1_self = cc_local.signature(dataset, 'sign1')
+sign1_self = cc_local.signature(dataset_dcmoa, 'sign1')
 
 # Get D6 sign2
-sign2_self = cc_local.signature(dataset, 'sign2')
+sign2_self = cc_local.signature(dataset_dcmoa, 'sign2')
 
 # %%
 # Fit sign3 
@@ -347,22 +411,162 @@ mapp = {
 """
 
 # CAUTION: COMPUTATIONALLY DEMANDING STEP - Consider running it in an HPC cluster
-sign3.fit(sign2_list, sign2_self, sign1_self, sign2_universe=None, complete_universe="fast", sign2_coverage=None, dbconnect=False, mapping_dict=mapp)
+sign3_dcmoa.fit(sign2_list_dcmoa, sign2_self, sign1_self, sign2_universe=None, complete_universe="fast", sign2_coverage=None, dbconnect=False, mapping_dict=mapp)
 
 # %%
-dataset = 'D6.001'
+sign3_dcmoa = np.array(sign3_dcmoa)
 
-# Instantiation of sign3
-sign3 = cc_local.signature(dataset, 'sign3')
-sign3 = np.array(sign3)
-
-print(sign3.shape, np.min(sign3), np.max(sign3))
+print(sign3_dcmoa.shape, np.min(sign3_dcmoa), np.max(sign3_dcmoa))
 
 # %%
 # Instantiation of diag3 (diagnosis plots)
-sign3 = cc_local.signature(dataset, 'sign3')
-diag3 = sign3.diagnosis(ref_cctype='sign3')
+diag3_dcmoa = sign3_dcmoa.diagnosis(ref_cctype='sign3')
 
 # Plot medium & small diagnosis plots
-diag3.canvas(size='medium', savefig=True, savefig_kwargs={'dpi': 300})
-diag3.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+diag3_dcmoa.canvas(size='medium', savefig=True, savefig_kwargs={'dpi': 300})
+diag3_dcmoa.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %% [markdown]
+# ### DEPs
+
+# %%
+
+# Get CC universe
+cc_universe_deps = []
+for dat in cc_local.datasets:
+    if dat != dataset_deps and dat.endswith('001'):
+        cc_universe_deps.extend(cc_local.get_signature('sign2', 'full', dat).keys())
+cc_universe_deps = set(cc_universe_deps)
+
+# Get D6 molecules
+d6_molecules_deps = set(sign2_deps.keys())
+
+print("Number of molecules in the CC universe: " + str(len(cc_universe_deps)))
+print("Number of molecules in D6 sign2: " + str(len(d6_molecules_deps)))
+print("Intersection CC & D6: " + str(len(cc_universe_deps.intersection(d6_molecules_deps))))
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign3_deps.clear_all()
+
+# Create a list of sign2 to feed sign3 -- using the 25 CC spaces & D6
+sign2_list_deps = list()
+
+# For each CC space
+for ds in cc_local.coordinates:
+    ds += '.001'
+    sign2_list_deps.append(cc_local.get_signature('sign2', 'full', ds))
+
+# Append the new D6 space
+sign2_list_deps.append(cc_local.get_signature('sign2','full', dataset_dcmoa))
+
+# In total, we now have 26 spaces
+print(len(sign2_list_deps))
+
+# Get D6 sign1
+sign1_self = cc_local.signature(dataset_dcmoa, 'sign1')
+
+# Get D6 sign2
+sign2_self = cc_local.signature(dataset_dcmoa, 'sign2')
+
+# %%
+# Fit sign3 
+
+mapp = None
+""" 
+# Alternatively, you can provide your in-house python dictionary to map InchiKey's to InChI's (see example below)
+mapp = { 
+'LPXQRXLUHJKZIE-UHFFFAOYSA-N': 'InChI=1S/C4H4N6O/c5-4-6-2-1(3(11)7-4)8-10-9-2/h(H4,5,6,7,8,9,10,11)',
+'BZKPWHYZMXOIDC-UHFFFAOYSA-N': 'InChI=1S/C4H6N4O3S2/c1-2(9)6-3-7-8-4(12-3)13(5,10)11/h1H3,(H2,5,10,11)(H,6,7,9)',
+'XZWYZXLIPXDOLR-UHFFFAOYSA-N': 'InChI=1S/C4H11N5/c1-9(2)4(7)8-3(5)6/h1-2H3,(H5,5,6,7,8)'
+} 
+"""
+
+# CAUTION: COMPUTATIONALLY DEMANDING STEP - Consider running it in an HPC cluster
+sign3_deps.fit(sign2_list_deps, sign2_self, sign1_self, sign2_universe=None, complete_universe="fast", sign2_coverage=None, dbconnect=False, mapping_dict=mapp)
+
+# %%
+sign3_deps = np.array(sign3_deps)
+
+print(sign3_deps.shape, np.min(sign3_deps), np.max(sign3_deps))
+
+# %%
+# Instantiation of diag3 (diagnosis plots)
+diag3_deps = sign3_deps.diagnosis(ref_cctype='sign3')
+
+# Plot medium & small diagnosis plots
+diag3_deps.canvas(size='medium', savefig=True, savefig_kwargs={'dpi': 300})
+diag3_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %% [markdown]
+# ### AllProt
+
+# %%
+
+# Get CC universe
+cc_universe_allprot = []
+for dat in cc_local.datasets:
+    if dat != dataset_all and dat.endswith('001'):
+        cc_universe_allprot.extend(cc_local.get_signature('sign2', 'full', dat).keys())
+cc_universe_allprot = set(cc_universe_allprot)
+
+# Get D6 molecules
+d6_molecules_allprot = set(sign2_allprot.keys())
+
+print("Number of molecules in the CC universe: " + str(len(cc_universe_allprot)))
+print("Number of molecules in D6 sign2: " + str(len(d6_molecules_allprot)))
+print("Intersection CC & D6: " + str(len(cc_universe_allprot.intersection(d6_molecules_allprot))))
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign3_allprot.clear_all()
+
+# Create a list of sign2 to feed sign3 -- using the 25 CC spaces & D6
+sign2_list_allprot = list()
+
+# For each CC space
+for ds in cc_local.coordinates:
+    ds += '.001'
+    sign2_list_allprot.append(cc_local.get_signature('sign2', 'full', ds))
+
+# Append the new D6 space
+sign2_list_allprot.append(cc_local.get_signature('sign2','full', dataset_dcmoa))
+
+# In total, we now have 26 spaces
+print(len(sign2_list_allprot))
+
+# Get D6 sign1
+sign1_self = cc_local.signature(dataset_dcmoa, 'sign1')
+
+# Get D6 sign2
+sign2_self = cc_local.signature(dataset_dcmoa, 'sign2')
+
+# %%
+# Fit sign3 
+
+mapp = None
+""" 
+# Alternatively, you can provide your in-house python dictionary to map InchiKey's to InChI's (see example below)
+mapp = { 
+'LPXQRXLUHJKZIE-UHFFFAOYSA-N': 'InChI=1S/C4H4N6O/c5-4-6-2-1(3(11)7-4)8-10-9-2/h(H4,5,6,7,8,9,10,11)',
+'BZKPWHYZMXOIDC-UHFFFAOYSA-N': 'InChI=1S/C4H6N4O3S2/c1-2(9)6-3-7-8-4(12-3)13(5,10)11/h1H3,(H2,5,10,11)(H,6,7,9)',
+'XZWYZXLIPXDOLR-UHFFFAOYSA-N': 'InChI=1S/C4H11N5/c1-9(2)4(7)8-3(5)6/h1-2H3,(H5,5,6,7,8)'
+} 
+"""
+
+# CAUTION: COMPUTATIONALLY DEMANDING STEP - Consider running it in an HPC cluster
+sign3_allprot.fit(sign2_list_allprot, sign2_self, sign1_self, sign2_universe=None, complete_universe="fast", sign2_coverage=None, dbconnect=False, mapping_dict=mapp)
+
+# %%
+sign3_allprot = np.array(sign3_allprot)
+
+print(sign3_allprot.shape, np.min(sign3_allprot), np.max(sign3_allprot))
+
+# %%
+# Instantiation of diag3 (diagnosis plots)
+sign3_allprot = cc_local.signature(dataset_all, 'sign3')
+diag3_allprot = sign3_allprot.diagnosis(ref_cctype='sign3')
+
+# Plot medium & small diagnosis plots
+diag3_allprot.canvas(size='medium', savefig=True, savefig_kwargs={'dpi': 300})
+diag3_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
