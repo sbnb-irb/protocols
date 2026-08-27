@@ -16,4 +16,3 @@ data/*
 
 # ---- Local CCs ----
 local*
-notebooks/PerturbProt.ipynb
