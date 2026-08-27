@@ -1,0 +1,19 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- Data ----
+data/*
+
+# ---- Local CCs ----
+local*
+notebooks/PerturbProt.ipynb
