@@ -18,12 +18,14 @@
 import os
 import numpy as np
 import pandas as pd
-from chemicalchecker import ChemicalChecker
 
 # Define variables and paths
+os.environ['CC_CONFIG'] = '/scratch/sbnb/sayala/chemical_checker/setup/cc_config.json'
 local_cc_dir = '../local_CC_D6'
 PATH_TO_DATA = "/scratch/sbnb/sayala/cc_data/data"  # See Download_Data.ipynb // Procedure step 3
-os.environ['CC_CONFIG'] = '/scratch/sbnb/sayala/chemical_checker/setup/cc_config.json'
+
+# CC import
+from chemicalchecker import ChemicalChecker
 
 # Apply general settings
 # %matplotlib inline
