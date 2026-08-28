@@ -358,7 +358,7 @@ sign3_dcmoa = cc_local.signature(dataset_dcmoa, 'sign3')
 # Get CC universe (the 25 canonical CC spaces) -- computed once, reused for all three cases below
 cc_universe = []
 for dat in cc_local.datasets:
-    if dat.endswith('001'):
+    if dat.endswith('001') and dat and dat != 'D6.001':
         cc_universe.extend(cc_local.get_signature('sign2', 'full', dat).keys)
 cc_universe = set(cc_universe)
 print("Number of molecules in the CC universe: " + str(len(cc_universe)))
@@ -379,7 +379,7 @@ mapp = {
 
 # %%
 # Get D6 molecules
-d6_molecules_dcmoa = set(sign2_dcmoa.keys())
+d6_molecules_dcmoa = set(sign2_dcmoa.keys)
  
 print("Number of molecules in D6 sign2: " + str(len(d6_molecules_dcmoa)))
 print("Intersection CC & D6: " + str(len(cc_universe.intersection(d6_molecules_dcmoa))))
@@ -425,7 +425,7 @@ diag3_dcmoa.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
 
 # %%
 # Get D6 molecules
-d6_molecules_deps = set(sign2_deps.keys())
+d6_molecules_deps = set(sign2_deps.keys)
  
 print("Number of molecules in D6 sign2: " + str(len(d6_molecules_deps)))
 print("Intersection CC & D6: " + str(len(cc_universe.intersection(d6_molecules_deps))))
@@ -471,7 +471,7 @@ diag3_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
 
 # %%
 # Get D6 molecules
-d6_molecules_allprot = set(sign2_allprot.keys())
+d6_molecules_allprot = set(sign2_allprot.keys)
  
 print("Number of molecules in D6 sign2: " + str(len(d6_molecules_allprot)))
 print("Intersection CC & D6: " + str(len(cc_universe.intersection(d6_molecules_allprot))))
