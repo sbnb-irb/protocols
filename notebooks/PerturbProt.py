@@ -21,7 +21,7 @@ import pandas as pd
 
 # Define variables and paths
 os.environ['CC_CONFIG'] = '/scratch/sbnb/sayala/chemical_checker/setup/cc_config.json'
-local_cc_dir = '../local_CC_D6'
+local_cc_dir = '/scratch/sbnb/sayala/protocols/local_CC_D6'
 PATH_TO_DATA = "/scratch/sbnb/sayala/cc_data/data"  # See Download_Data.ipynb // Procedure step 3
 
 # CC import
@@ -40,19 +40,32 @@ cc_local = ChemicalChecker(local_cc_dir, dbconnect=False, custom_data_path=PATH_
 # Load the raw binary data
 # Rows: compounds
 # Columns: Uniprot IDs
-all_proteins_f = "../data/PerturbProt/all_studies_wide.csv"
-deps_f = "../data/PerturbProt/all_studies_deps_wide.csv"
-deepcovermoa_f = "../data/PerturbProt/deepcovermoa_wide.csv"
-df_allprot = pd.read_csv(all_proteins_f, sep=',', index_col=0)
-df_deps = pd.read_csv(deps_f, sep=',', index_col=0)
-df_deepcovermoa = pd.read_csv(deepcovermoa_f, sep=',', index_col=0)
+all_proteins_f = "/scratch/sbnb/sayala/protocols/data/PerturbProt/all_studies_wide.csv"
+all_proteins_shared_f = "/scratch/sbnb/sayala/protocols/data/PerturbProt/all_studies_wide_shared.csv"
+deps_f = "/scratch/sbnb/sayala/protocols/data/PerturbProt/all_studies_deps_wide.csv"
+deps_shared_f = "/scratch/sbnb/sayala/protocols/data/PerturbProt/all_studies_deps_wide_shared.csv"
+deepcovermoa_f = "/scratch/sbnb/sayala/protocols/data/PerturbProt/deepcovermoa_wide.csv"
+deepcovermoa_deps_f = "/scratch/sbnb/sayala/protocols/data/PerturbProt/deepcovermoa_deps_wide.csv"
 
+df_allprot = pd.read_csv(all_proteins_f, sep=',', index_col=0)
+df_allprot_shared = pd.read_csv(all_proteins_shared_f, sep=',', index_col=0)
+df_deps = pd.read_csv(deps_f, sep=',', index_col=0)
+df_shared_deps = pd.read_csv(deps_shared_f, sep=',', index_col=0)
+df_deepcovermoa = pd.read_csv(deepcovermoa_f, sep=',', index_col=0)
+df_deepcovermoa_deps = pd.read_csv(deepcovermoa_deps_f, sep=',', index_col=0)
 # %% [markdown]
-# ### AllProt
+# ### All Proteins
 
 # %%
 print(df_allprot.shape)
 df_allprot.head()
+
+# %% [markdown]
+# ### All Shared Proteins
+
+# %%
+print(df_allprot_shared.shape)
+df_allprot_shared.head()
 
 # %% [markdown]
 # ### DEPs
@@ -62,6 +75,13 @@ print(df_deps.shape)
 df_deps.head()
 
 # %% [markdown]
+# ### Shared DEPs
+
+# %%
+print(df_shared_deps.shape)
+df_shared_deps.head()
+
+# %% [markdown]
 # ### DeepCoverMoa 
 
 # %%
@@ -69,13 +89,23 @@ print(df_deepcovermoa.shape)
 df_deepcovermoa.head()
 
 # %% [markdown]
+# ### DeepCoverMoa DEPs
+
+# %%
+print(df_deepcovermoa_deps.shape)
+df_deepcovermoa_deps.head()
+
+# %% [markdown]
 # ## sign0
 
 # %%
 # Dataset Names
 dataset_dcmoa = 'D6.002'
-dataset_deps = 'D6.003'
-dataset_all = 'D6.004'
+dataset_dcmoa_deps = 'D6.003' 
+dataset_deps = 'D6.004'
+dataset_shared_deps = 'D6.005'
+dataset_allprot = 'D6.006'
+dataset_shared_allprot = 'D6.007'
 
 # Set sanitizer parameters to avoid expensive filtering that might cause issues
 sanitizer_kwargs = {
@@ -83,9 +113,12 @@ sanitizer_kwargs = {
 }
 
 # Instantiation of sign0 data structures for the new spaces: full and references
-sign0_deps = cc_local.signature(dataset_deps, 'sign0')
-sign0_allprot = cc_local.signature(dataset_all, 'sign0')
 sign0_dcmoa = cc_local.signature(dataset_dcmoa, 'sign0')
+sign0_dcmoa_deps = cc_local.signature(dataset_dcmoa_deps, 'sign0')
+sign0_deps = cc_local.signature(dataset_deps, 'sign0')
+sign0_shared_deps = cc_local.signature(dataset_shared_deps, 'sign0')
+sign0_allprot = cc_local.signature(dataset_allprot, 'sign0')
+sign0_shared_allprot = cc_local.signature(dataset_shared_allprot, 'sign0')
 
 # %% [markdown]
 # ### DeepCoverMoa
@@ -106,6 +139,32 @@ diag0_dcmoa = sign0_dcmoa.diagnosis()
 
 # Plot small diagnosis plots
 diag0_dcmoa.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign0_dcmoa).flatten()), np.max(np.array(sign0_dcmoa).flatten())
+
+# %% [markdown]
+# ### DeepCoverMoa DEPs
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign0_dcmoa_deps.clear_all()
+
+# Fit sign0
+sign0_dcmoa_deps.fit(X=df_deepcovermoa_deps.values, keys=list(df_deepcovermoa_deps.index), features=list(df_deepcovermoa_deps.columns), sanitizer_kwargs=sanitizer_kwargs)
+
+# %%
+sign0_dcmoa_deps.shape
+
+# %%
+# Instantiation of diag0 (diagnosis plots)
+diag0_dcmoa_deps = sign0_dcmoa_deps.diagnosis()
+
+# Plot small diagnosis plots
+diag0_dcmoa_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign0_dcmoa_deps).flatten()), np.max(np.array(sign0_dcmoa_deps).flatten())
 
 # %% [markdown]
 # ### DEPs
@@ -131,6 +190,29 @@ diag0_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
 np.min(np.array(sign0_deps).flatten()), np.max(np.array(sign0_deps).flatten())
 
 # %% [markdown]
+# ### Shared DEPs
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign0_shared_deps.clear_all()
+
+# Fit sign0
+sign0_shared_deps.fit(X=df_shared_deps.values, keys=list(df_shared_deps.index), features=list(df_shared_deps.columns), sanitizer_kwargs=sanitizer_kwargs)
+
+# %%
+sign0_shared_deps.shape
+
+# %%
+# Instantiation of diag0 (diagnosis plots)
+diag0_shared_deps = sign0_shared_deps.diagnosis()
+
+# Plot small diagnosis plots
+diag0_shared_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign0_shared_deps).flatten()), np.max(np.array(sign0_shared_deps).flatten())
+
+# %% [markdown]
 # ### AllProt
 
 # %%
@@ -154,13 +236,39 @@ diag0_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
 np.min(np.array(sign0_allprot).flatten()), np.max(np.array(sign0_allprot).flatten())
 
 # %% [markdown]
+# ### All Shared Proteins
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign0_shared_allprot.clear_all()
+
+# Fit sign0
+sign0_shared_allprot.fit(X=df_allprot_shared.values, keys=list(df_allprot_shared.index), features=list(df_allprot_shared.columns), sanitizer_kwargs=sanitizer_kwargs)
+
+# %%
+sign0_shared_allprot.shape
+
+# %%
+# Instantiation of diag0 (diagnosis plots)
+diag0_shared_allprot = sign0_shared_allprot.diagnosis()
+
+# Plot small diagnosis plots
+diag0_shared_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign0_shared_allprot).flatten()), np.max(np.array(sign0_shared_allprot).flatten())
+
+# %% [markdown]
 # ## sign1
 
 # %%
 # Instantiation of sign1 data structures for the new spaces: full and references
-sign1_deps = cc_local.signature(dataset_deps, 'sign1')
-sign1_allprot = cc_local.signature(dataset_all, 'sign1')
 sign1_dcmoa = cc_local.signature(dataset_dcmoa, 'sign1')
+sign1_dcmoa_deps = cc_local.signature(dataset_dcmoa_deps, 'sign1')
+sign1_deps = cc_local.signature(dataset_deps, 'sign1')
+sign1_shared_deps = cc_local.signature(dataset_shared_deps, 'sign1')
+sign1_allprot = cc_local.signature(dataset_allprot, 'sign1')
+sign1_shared_allprot = cc_local.signature(dataset_shared_allprot, 'sign1')
 
 # %% [markdown]
 # ### DeepCoverMoa
@@ -199,6 +307,42 @@ neig1_dcmoa.shape
 np.min(np.array(sign1_dcmoa).flatten()), np.max(np.array(sign1_dcmoa).flatten())
 
 # %% [markdown]
+# ### DeepCoverMoa DEPs
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign1_dcmoa_deps.clear_all()
+
+# Fitting sign1
+sign1_dcmoa_deps.fit(sign0_dcmoa_deps)
+
+# %%
+sign1_dcmoa_deps.shape
+
+# %%
+# Instantiation of diag1 (diagnosis plots)
+diag1_dcmoa_deps = sign1_dcmoa_deps.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag1_dcmoa_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+# Instantiation of neig1
+neig1_dcmoa_deps = cc_local.get_signature("neig1", "full", dataset_dcmoa_deps)  # It will take the reference anyway...
+
+# Cleaning both full and reference. This is crucial!
+neig1_dcmoa_deps.clear_all()
+
+# Fitting neig1
+neig1_dcmoa_deps.fit(sign1_dcmoa_deps)
+
+# %%
+neig1_dcmoa_deps.shape
+
+# %%
+np.min(np.array(sign1_dcmoa_deps).flatten()), np.max(np.array(sign1_dcmoa_deps).flatten())
+
+# %% [markdown]
 # ### DEPs
 
 # %%
@@ -235,7 +379,43 @@ neig1_deps.shape
 np.min(np.array(sign1_deps).flatten()), np.max(np.array(sign1_deps).flatten())
 
 # %% [markdown]
-# ### AllProt
+# ### Shared DEPs
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign1_shared_deps.clear_all()
+
+# Fitting sign1
+sign1_shared_deps.fit(sign0_shared_deps)
+
+# %%
+sign1_shared_deps.shape
+
+# %%
+# Instantiation of diag1 (diagnosis plots)
+diag1_shared_deps = sign1_shared_deps.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag1_shared_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+# Instantiation of neig1
+neig1_shared_deps = cc_local.get_signature("neig1", "full", dataset_shared_deps)  # It will take the reference anyway...
+
+# Cleaning both full and reference. This is crucial!
+neig1_shared_deps.clear_all()
+
+# Fitting neig1
+neig1_shared_deps.fit(sign1_shared_deps)
+
+# %%
+neig1_shared_deps.shape
+
+# %%
+np.min(np.array(sign1_shared_deps).flatten()), np.max(np.array(sign1_shared_deps).flatten())
+
+# %% [markdown]
+# ### All Proteins
 
 # %%
 # Cleaning both full and reference datasets. This is crucial!
@@ -256,7 +436,7 @@ diag1_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
 
 # %%
 # Instantiation of neig1
-neig1_allprot = cc_local.get_signature("neig1", "full", dataset_all)  # It will take the reference anyway...
+neig1_allprot = cc_local.get_signature("neig1", "full", dataset_allprot)  # It will take the reference anyway...
 
 # Cleaning both full and reference. This is crucial!
 neig1_allprot.clear_all()
@@ -269,14 +449,54 @@ neig1_allprot.shape
 
 # %%
 np.min(np.array(sign1_allprot).flatten()), np.max(np.array(sign1_allprot).flatten())
+
+# %% [markdown]
+# ### All Shared Proteins
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign1_shared_allprot.clear_all()
+
+# Fitting sign1
+sign1_shared_allprot.fit(sign0_shared_allprot)
+
+# %%
+sign1_shared_allprot.shape
+
+# %%
+# Instantiation of diag1 (diagnosis plots)
+diag1_shared_allprot = sign1_shared_allprot.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag1_shared_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+# Instantiation of neig1
+neig1_shared_allprot = cc_local.get_signature("neig1", "full", dataset_shared_allprot)  # It will take the reference anyway...
+
+# Cleaning both full and reference. This is crucial!
+neig1_shared_allprot.clear_all()
+
+# Fitting neig1
+neig1_shared_allprot.fit(sign1_shared_allprot)
+
+# %%
+neig1_shared_allprot.shape
+
+# %%
+np.min(np.array(sign1_shared_allprot).flatten()), np.max(np.array(sign1_shared_allprot).flatten())
+
 # %% [markdown]
 # ## sign2
 
 # %%
 # Instantiation of sign1 data structures for the new spaces: full and references
-sign2_deps = cc_local.signature(dataset_deps, 'sign2')
-sign2_allprot = cc_local.signature(dataset_all, 'sign2')
 sign2_dcmoa = cc_local.signature(dataset_dcmoa, 'sign2')
+sign2_dcmoa_deps = cc_local.signature(dataset_dcmoa_deps, 'sign2')
+sign2_deps = cc_local.signature(dataset_deps, 'sign2')
+sign2_shared_deps = cc_local.signature(dataset_shared_deps, 'sign2')
+sign2_allprot = cc_local.signature(dataset_allprot, 'sign2')
+sign2_shared_allprot = cc_local.signature(dataset_shared_allprot, 'sign2')
 
 # %% [markdown]
 # ### DeepCoverMoa
@@ -302,6 +522,29 @@ diag2_dcmoa.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
 np.min(np.array(sign2_dcmoa).flatten()), np.max(np.array(sign2_dcmoa).flatten())
 
 # %% [markdown]
+# ### DeepCoverMoa DEPs
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign2_dcmoa_deps.clear_all()
+
+# Fit sign2 given sign1 & neig1
+sign2_dcmoa_deps.fit(sign1_dcmoa_deps, neig1_dcmoa_deps, oos_predictor=False)
+
+# %%
+sign2_dcmoa_deps.shape
+
+# %%
+# Instantiation of diag2 (diagnosis plots)
+diag2_dcmoa_deps = sign2_dcmoa_deps.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag2_dcmoa_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign2_dcmoa_deps).flatten()), np.max(np.array(sign2_dcmoa_deps).flatten())
+
+# %% [markdown]
 # ### DEPs
 
 # %%
@@ -325,7 +568,30 @@ diag2_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
 np.min(np.array(sign2_deps).flatten()), np.max(np.array(sign2_deps).flatten())
 
 # %% [markdown]
-# ### AllProt
+# ### Shared DEPs
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign2_shared_deps.clear_all()
+
+# Fit sign2 given sign1 & neig1
+sign2_shared_deps.fit(sign1_shared_deps, neig1_shared_deps, oos_predictor=False)
+
+# %%
+sign2_shared_deps.shape
+
+# %%
+# Instantiation of diag2 (diagnosis plots)
+diag2_shared_deps = sign2_shared_deps.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag2_shared_deps.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign2_shared_deps).flatten()), np.max(np.array(sign2_shared_deps).flatten())
+
+# %% [markdown]
+# ### All Proteins
 
 # %%
 # Cleaning both full and reference datasets. This is crucial!
@@ -348,13 +614,39 @@ diag2_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
 np.min(np.array(sign2_allprot).flatten()), np.max(np.array(sign2_allprot).flatten())
 
 # %% [markdown]
+# ### All Shared Proteins
+
+# %%
+# Cleaning both full and reference datasets. This is crucial!
+sign2_shared_allprot.clear_all()
+
+# Fit sign2 given sign1 & neig1
+sign2_shared_allprot.fit(sign1_shared_allprot, neig1_shared_allprot, oos_predictor=False)
+
+# %%
+sign2_shared_allprot.shape
+
+# %%
+# Instantiation of diag2 (diagnosis plots)
+diag2_shared_allprot = sign2_shared_allprot.diagnosis()
+
+# Plot medium & small diagnosis plots
+diag2_shared_allprot.canvas(size='small', savefig=True, savefig_kwargs={'dpi': 300})
+
+# %%
+np.min(np.array(sign2_shared_allprot).flatten()), np.max(np.array(sign2_shared_allprot).flatten())
+
+# %% [markdown]
 # ## sign3
 
 # %%
 # Instantiation of sign1 data structures for the new spaces: full and references
-sign3_deps = cc_local.signature(dataset_deps, 'sign3')
-sign3_allprot = cc_local.signature(dataset_all, 'sign3')
 sign3_dcmoa = cc_local.signature(dataset_dcmoa, 'sign3')
+sign3_dcmoa_deps = cc_local.signature(dataset_dcmoa_deps, 'sign3')
+sign3_deps = cc_local.signature(dataset_deps, 'sign3')
+sign3_shared_deps = cc_local.signature(dataset_shared_deps, 'sign3')
+sign3_allprot = cc_local.signature(dataset_allprot, 'sign3')
+sign3_shared_allprot = cc_local.signature(dataset_shared_allprot, 'sign3')
 
 # %%
 # Get CC universe (the 25 canonical CC spaces) -- computed once, reused for all three cases below
@@ -381,7 +673,7 @@ mapp = {
 
 # %%
 # Get D6 molecules
-d6_molecules_dcmoa = set(sign2_dcmoa.keys)
+d6_molecules_dcmoa = set(sign2_shared_allprot.keys)
  
 print("Number of molecules in D6 sign2: " + str(len(d6_molecules_dcmoa)))
 print("Intersection CC & D6: " + str(len(cc_universe.intersection(d6_molecules_dcmoa))))
