@@ -3,7 +3,8 @@
 import logging
 
 logging.basicConfig(level=logging.WARNING, force=True)
-from importlib import metadata
+import tomllib
+from pathlib import Path
 import os
 
 # compatibility with plotly6
@@ -14,7 +15,8 @@ os.environ["PLOTLY_RENDERER"] = "notebook"
 project = "chemical_checker_protocols"
 copyright = "2026, SBNB"
 author = "SBNB"
-PACKAGE_VERSION = metadata.version("chemical_checker_protocols")
+pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
+PACKAGE_VERSION = pyproject["project"]["version"]
 version = PACKAGE_VERSION
 release = PACKAGE_VERSION
 
