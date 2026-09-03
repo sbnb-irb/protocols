@@ -35,5 +35,5 @@ python:
     - method: uv
       command: sync
       path: .
-      extra_requirements:
+      extras:
         - docs
