@@ -2,9 +2,9 @@ name: Build and deploy docs
 
 on:
   pull_request:
-    branches: [main]
+    branches: [master]
   push:
-    branches: [main]
+    branches: [master]
     tags:
       - "v*"
   workflow_dispatch: {}
@@ -31,7 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --locked --all-groups
+          uv sync --locked --extra docs
 
       - name: Build docs
         working-directory: docs
@@ -40,13 +40,7 @@ jobs:
         #   uv run sphinx-build -b html docs docs/_build/
 
       - name: Copy README into site
-        run: cp README.md docs/_build/README.md
-
-      - name: Copy CNAME into site
-        run: cp docs/CNAME docs/_build/CNAME
-
-      - name: Copy contributing into site
-        run: cp Contributing.md docs/_build/Contributing.md
+        run: cp README.md docs/_build/README.mdno no, do not do it yourself, just give me the code isntructions to cerate the pytp
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3

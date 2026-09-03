@@ -51,7 +51,7 @@ html_css_files = ["custom.css"]
 # https://sphinx-book-theme.readthedocs.io/en/stable/index.html
 html_theme = "sphinx_book_theme"
 html_logo = "assets/cc_logo.svg"
-html_favicon = "assets/cc_favicon.svg"
+html_favicon = "assets/cc_favicon.ico"
 html_theme_options = {
     "github_url": "https://github.com/sbnb-irb/protocols",
     "repository_url": "https://github.com/sbnb-irb/protocols",
@@ -100,7 +100,7 @@ new_tab_link_show_external_link_icon = True
 myst_enable_extensions = ["dollarmath", "amsmath"]
 # Execution
 #  https://myst-nb.readthedocs.io/en/latest/computation/execute.html
-nb_execution_mode = "auto"
+nb_execution_mode = "off"
 nb_execution_timeout = -1  # -1 means no timeout
 nb_execution_raise_on_error = True  # fail the build if a notebook cell raises an error
 # Rendering
