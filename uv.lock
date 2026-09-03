@@ -405,8 +405,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-docs = [
+dev = [
     { name = "jupytext" },
+]
+docs = [
     { name = "myst-nb" },
     { name = "sphinx" },
     { name = "sphinx-autobuild" },
@@ -420,7 +422,7 @@ docs = [
 [package.metadata]
 requires-dist = [
     { name = "chemicalchecker", specifier = ">=1.0.6" },
-    { name = "jupytext", marker = "extra == 'docs'", specifier = ">=1.19.5" },
+    { name = "jupytext", marker = "extra == 'dev'", specifier = ">=1.19.5" },
     { name = "myst-nb", marker = "extra == 'docs'", specifier = ">=1.4.0" },
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "pandas", specifier = ">=3.0.5" },
@@ -433,7 +435,7 @@ requires-dist = [
     { name = "sphinx-togglebutton", marker = "extra == 'docs'", specifier = ">=0.4.5" },
     { name = "wget", specifier = ">=3.2" },
 ]
-provides-extras = ["docs"]
+provides-extras = ["docs", "dev"]
 
 [[package]]
 name = "chemicalchecker"

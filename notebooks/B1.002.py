@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -11,6 +12,9 @@
 #     language: python
 #     name: python3
 # ---
+
+# %% [markdown]
+# # B1.002 SPACE 
 
 # %%
 import os
@@ -65,7 +69,7 @@ PATH_TO_DATA = "/aloy/home/acomajuncosa/CC_DATA/DATA/"  # See Download_Data.ipyn
 cc_local = ChemicalChecker(local_cc_dir, dbconnect=False, custom_data_path=PATH_TO_DATA)
 
 # %% [markdown]
-# ## LOAD INPUT DATA -- NEW B1.002 SPACE ##
+# ## LOAD INPUT DATA
 
 # %%
 # Dataset Name

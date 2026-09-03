@@ -1,6 +1,7 @@
 # ---
 # jupyter:
 #   jupytext:
+#     formats: ipynb,py:percent
 #     text_representation:
 #       extension: .py
 #       format_name: percent
@@ -11,6 +12,9 @@
 #     language: python
 #     name: python3
 # ---
+
+# %% [markdown]
+# # Download Chemical Checker Data
 
 # %%
 import os
