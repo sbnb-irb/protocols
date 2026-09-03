@@ -1,0 +1,24 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# ---- uv-managed environment (do NOT commit) ----
+.venv/
+venv/
+env/
+
+# ---- Per-run logs (regenerated each run) ----
+logs/
+*.log
+
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- Others ----
+
