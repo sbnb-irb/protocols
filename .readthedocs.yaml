@@ -10,6 +10,10 @@ build:
   os: ubuntu-24.04
   tools:
     python: "3.13"
+  jobs:
+    pre_build:
+      - mkdir -p docs/notebooks
+      - cp notebooks/*.ipynb docs/notebooks/
     # You can also specify other tool versions:
     # nodejs: "19"
     # rust: "1.64"
