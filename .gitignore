@@ -26,3 +26,8 @@ data/*
 
 # ---- Local CCs ----
 local*
+
+# ---- Logs ----
+*.err
+*.log
+logs/
