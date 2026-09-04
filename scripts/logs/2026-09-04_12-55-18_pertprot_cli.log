@@ -1,0 +1,3 @@
+2026-09-04 12:55:18 [INFO] root: Path to log file: /scratch/sbnb/sayala/protocols/scripts/logs/2026-09-04_12-55-18_pertprot_cli.log
+2026-09-04 12:55:18 [INFO] utils: Command line: /scratch/sbnb/sayala/protocols/scripts/pertprot_cli.py --datasets shared_allprot --log-dir /scratch/sbnb/sayala/protocols/scripts/logs
+2026-09-04 12:55:18 [INFO] utils: Total run time: 0.0 s
