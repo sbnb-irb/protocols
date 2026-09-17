@@ -1,0 +1,21 @@
+{
+  "n_shared_compounds": 1230708,
+  "n_pool_compounds": 50000,
+  "pval": 0.01,
+  "a_recap_by_b": {
+    "auroc": 0.6058782215197412,
+    "std": 0.004050880313357424,
+    "cutoff": 0.4112697252631188,
+    "cutoff_std": 0.008170181855576449,
+    "mean_positive_rate": 0.009774725890356143,
+    "n_valid_subsamples": 5
+  },
+  "b_recap_by_a": {
+    "auroc": 0.6052301058619032,
+    "std": 0.006725537122390042,
+    "cutoff": 0.39592949947714806,
+    "cutoff_std": 0.009258281603143499,
+    "mean_positive_rate": 0.00975391756702681,
+    "n_valid_subsamples": 5
+  }
+}

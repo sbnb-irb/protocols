@@ -1,0 +1,3 @@
+space,dataset_code,n_full,n_non_redundant,pct_redundant,n_clusters,dbscan_epsilon,pct_unclustered,largest_cluster_pct,mean_cc_spaces_per_compound,median_cc_spaces_per_compound,min_cc_spaces,pct_in_fewer_than_5_spaces,n_in_zero_other_spaces,mean_ranks_agreement,median_ranks_agreement,max_ranks_agreement,n_undefined_ranks_agreement
+DeepCoverMoA,D6.002,1230708,1200017,2.4937678149487885,113,1.0407231249371072,14.48,8.3,7.7281,8.0,4.0,0.51,0,0.08567706535900986,0.03140857637556904,0.22179527699976187,0
+All Shared Proteins,D6.007,1230715,1199609,2.5274738668172536,147,1.0161822415202253,16.49,11.62,7.7595,8.0,0.0,0.5,1,0.08780259746310873,0.03321262301223803,0.22659779995705195,1

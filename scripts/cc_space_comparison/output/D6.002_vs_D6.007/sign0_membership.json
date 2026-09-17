@@ -1,0 +1,13 @@
+{
+  "label_a": "DeepCoverMoA",
+  "label_b": "All Shared Proteins",
+  "n_input_compounds_a": 872,
+  "n_input_compounds_b": 956,
+  "n_features_a": 9802,
+  "n_features_b": 3083,
+  "n_shared_input_compounds": 872,
+  "n_only_a": 0,
+  "n_only_b": 84,
+  "a_is_subset_of_b": true,
+  "b_is_subset_of_a": false
+}

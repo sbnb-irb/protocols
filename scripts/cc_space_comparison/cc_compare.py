@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
@@ -280,9 +281,20 @@ def _coerce_1d_array(raw: Any, name: str) -> np.ndarray:
 def _coerce_across_roc(raw: Any) -> pd.DataFrame:
     """Best-effort coercion of an ``across_roc.pkl`` payload into a tidy frame.
 
-    Handles the two shapes commonly produced by ``diagnosis()``: a
-    ``pandas.DataFrame`` indexed by CC dataset code, or a ``dict`` mapping
-    dataset code to AUROC.
+    Confirmed shape (from direct inspection of a real
+    ``local_CC_D6`` instance): a ``dict`` keyed by CC dataset code, each
+    value itself a ``dict`` with a full ROC/PR curve plus scalars --
+    ``{'fpr': array(...), 'tpr': array(...), 'auc': float,
+    'precision': array(...), 'recall': array(...),
+    'average_precision_score': float}``. Only the scalar ``'auc'`` is
+    needed for the per-CC-space AUROC comparison; the full curves are not
+    currently used (extend this if per-space curve overlays are wanted
+    later, but keep large arrays out of any CSV export -- writing them
+    straight to a DataFrame cell produces an unusable, truncated string
+    repr rather than real data, which is what happened before this fix).
+    Also handles a flatter ``{code: auroc}`` shape as a fallback, and a
+    ``pandas.DataFrame`` indexed by dataset code, in case this differs
+    across ``chemicalchecker`` versions.
 
     Parameters
     ----------
@@ -297,14 +309,25 @@ def _coerce_across_roc(raw: Any) -> pd.DataFrame:
     Raises
     ------
     TypeError
-        If ``raw`` matches neither expected shape.
+        If ``raw`` matches none of the recognized shapes.
     """
     if isinstance(raw, pd.DataFrame):
         df = raw.reset_index()
         df = df.rename(columns={df.columns[0]: "cc_space", df.columns[1]: "auroc"})
         return df[["cc_space", "auroc"]]
     if isinstance(raw, dict):
-        return pd.DataFrame({"cc_space": list(raw.keys()), "auroc": list(raw.values())})
+        values = list(raw.values())
+        if values and isinstance(values[0], dict) and "auc" in values[0]:
+            return pd.DataFrame(
+                {"cc_space": list(raw.keys()), "auroc": [v["auc"] for v in values]}
+            )
+        if values and all(isinstance(v, (int, float, np.floating, np.integer)) for v in values):
+            return pd.DataFrame({"cc_space": list(raw.keys()), "auroc": values})
+        raise TypeError(
+            f"Unrecognized across_roc.pkl dict shape (first value type: "
+            f"{type(values[0]) if values else None!r}). Inspect it manually "
+            "(pickle.load) and extend _coerce_across_roc()."
+        )
     raise TypeError(
         f"Unrecognized across_roc.pkl payload type: {type(raw)!r}. "
         "Inspect it manually (pickle.load) and extend _coerce_across_roc()."
@@ -696,7 +719,7 @@ def plot_recapitulation_roc(
 
     fpr_grid = np.linspace(0, 1, 100)
     fig, ax = plt.subplots(figsize=(5, 5))
-    colors = plt.cm.viridis(np.linspace(0.25, 0.75, len(pvals)))
+    colors = _get_palette_colors(len(pvals))
     for pval, color in zip(pvals, colors):
         mean_tpr, std_tpr, mean_auroc, std_auroc = _roc_curve_with_band(
             ref_vectors, query_vectors, pval, n_random, n_subsamples, random_state, fpr_grid
@@ -712,8 +735,39 @@ def plot_recapitulation_roc(
     ax.set_title(f"Recap. {ref_label} NN by {query_label}")
     ax.legend(loc="lower right", fontsize=8)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
+    _savefig_atomic(fig, output_path)
     plt.close(fig)
+
+
+def _savefig_atomic(fig, output_path: Path, dpi: int = 300) -> None:
+    """Save a matplotlib figure atomically (write to a temp file, then rename).
+
+    A plain ``fig.savefig(path)`` can leave a truncated, misleadingly
+    *present* but empty/partial file at ``path`` if the process is
+    interrupted mid-write -- e.g. an OOM kill during PNG encoding, which is
+    what appears to have happened to a couple of the heavier plots in this
+    module in practice (0-byte files that looked like a silent success).
+    Writing to a sibling ``.tmp`` file first and only replacing the
+    destination once the write has fully completed (``os.replace`` is
+    atomic on POSIX) means an interruption produces either a complete file
+    or no file at all, never a broken one sitting where a good file ought
+    to be.
+
+    Parameters
+    ----------
+    fig : matplotlib.figure.Figure
+        Figure to save.
+    output_path : Path
+        Final destination path.
+    dpi : int, default 300
+        Resolution to save at.
+    """
+    output_path = Path(output_path)
+    tmp_path = output_path.with_name(output_path.name + ".tmp")
+    # matplotlib infers the output format from the filename extension, which
+    # the ".tmp" suffix would break -- pass it explicitly instead.
+    fig.savefig(tmp_path, dpi=dpi, format=output_path.suffix.lstrip("."))
+    os.replace(tmp_path, output_path)
 
 
 def plot_confidence_overlay(df: pd.DataFrame, output_path: Path) -> None:
@@ -732,13 +786,22 @@ def plot_confidence_overlay(df: pd.DataFrame, output_path: Path) -> None:
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(6, 4))
-    for space, group in df.groupby("space"):
-        ax.hist(group["confidence"], bins=50, alpha=0.5, density=True, label=space)
+    # df["space"].unique() preserves the order labels first appear in (i.e.
+    # space A, then space B); df.groupby("space") would instead iterate
+    # alphabetically, which can silently flip which color goes with which
+    # space depending on the label text -- e.g. "All Shared Proteins" sorts
+    # before "DeepCoverMoA" -- and desync this plot's colors from
+    # headline_metrics_bar.png's, which iterates in actual A/B order.
+    spaces = df["space"].unique().tolist()
+    colors = _get_palette_colors(len(spaces))
+    for space, color in zip(spaces, colors):
+        subset = df.loc[df["space"] == space, "confidence"]
+        ax.hist(subset, bins=50, alpha=0.5, density=True, label=space, color=color)
     ax.set_xlabel("Confidence")
     ax.set_ylabel("Density")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
+    _savefig_atomic(fig, output_path)
     plt.close(fig)
 
 
@@ -773,7 +836,7 @@ def plot_across_roc_scatter(df: pd.DataFrame, output_path: Path, label_a: str, l
     ax.set_ylabel(f"{label_b} ROC-AUC")
     ax.set_title("Per-CC-space NN recapitulation")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
+    _savefig_atomic(fig, output_path)
     plt.close(fig)
 
 
@@ -843,23 +906,56 @@ def plot_validation_roc_overlay(
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+    colors = _get_palette_colors(2)
     for ax, kind in zip(axes, ("moa", "atc")):
-        for cc_dir, dataset, label in (
-            (local_cc_dir_a, dataset_a, label_a),
-            (local_cc_dir_b, dataset_b, label_b),
+        for (cc_dir, dataset, label), color in zip(
+            (
+                (local_cc_dir_a, dataset_a, label_a),
+                (local_cc_dir_b, dataset_b, label_b),
+            ),
+            colors,
         ):
             df = load_validation_table(cc_dir, dataset, kind)
             fpr, tpr = _extract_roc_curve(df)
             order = np.argsort(fpr)
-            ax.plot(fpr[order], tpr[order], label=label)
+            ax.plot(fpr[order], tpr[order], label=label, color=color)
         ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
         ax.set_xlabel("FPR")
         ax.set_ylabel("TPR")
         ax.set_title(kind.upper())
         ax.legend()
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
+    _savefig_atomic(fig, output_path)
     plt.close(fig)
+
+
+def _get_palette_colors(n: int) -> list[str]:
+    """Return the first ``n`` colors from a shared, presentation-friendly palette.
+
+    Used everywhere in this module that draws two (or more) comparable
+    series -- space A vs. space B in bar/histogram/line plots, and the two
+    p-value cutoffs in the recapitulation ROC plots -- so the whole set of
+    outputs shares one consistent, muted color scheme rather than mixing
+    matplotlib's saturated default cycle in some plots with an unrelated
+    colormap (e.g. viridis) in others. Colors are a softer/paler pastel
+    pair rather than matplotlib's default fully-saturated tab10 blue/orange,
+    which reads better in a slide deck.
+
+    Parameters
+    ----------
+    n : int
+        Number of colors needed.
+
+    Returns
+    -------
+    list of str
+        The first ``n`` hex color codes from the palette (repeated if
+        ``n`` exceeds the palette length).
+    """
+    palette = ["#8DB6D9", "#F2B880", "#9BC7A5", "#D89BB6", "#C6B2D9", "#E3C87A"]
+    if n > len(palette):
+        palette = palette * (n // len(palette) + 1)
+    return palette[:n]
 
 
 def plot_headline_metrics_bar(summary_df: pd.DataFrame, output_path: Path) -> None:
@@ -875,6 +971,18 @@ def plot_headline_metrics_bar(summary_df: pd.DataFrame, output_path: Path) -> No
     invisibility. Count-like fields are excluded outright rather than merely
     rescaled, since they aren't validation metrics.
 
+    KS-test p-value columns (``*_ks_p``) are also excluded outright, not
+    just visually reformatted. At this sample size (~1M compounds feeding
+    the KS test), the p-value underflows to essentially exact 0.0 in
+    float64 almost regardless of how large or small the actual
+    distributional difference is -- with N this large, any nonzero
+    difference clears significance. The KS D-statistic columns
+    (``*_ks_d``, kept as ordinary bars here) are the actual effect size and
+    the only part of that test carrying real information at this scale;
+    showing the p-value alongside it adds nothing and risks being
+    misread as if a near-zero p-value were itself evidence of a large or
+    important difference.
+
     Parameters
     ----------
     summary_df : pandas.DataFrame
@@ -885,7 +993,8 @@ def plot_headline_metrics_bar(summary_df: pd.DataFrame, output_path: Path) -> No
     Raises
     ------
     ValueError
-        If no numeric, non-count metric columns are found to plot.
+        If no numeric, non-count, non-p-value metric columns are found to
+        plot.
     """
     import matplotlib
 
@@ -893,17 +1002,22 @@ def plot_headline_metrics_bar(summary_df: pd.DataFrame, output_path: Path) -> No
     import matplotlib.pyplot as plt
 
     exclude_name_hints = ("molecule", "n_keys", "keys", "count")
+
+    def _is_pvalue_like(col: str) -> bool:
+        return col.endswith("_p") or "pval" in col.lower() or "p_value" in col.lower()
+
     metric_cols = [
         c
         for c in summary_df.columns
         if (c.startswith("validation_") or c in {"mean_confidence", "pct_outliers"})
         and pd.api.types.is_numeric_dtype(summary_df[c])
         and not any(hint in c.lower() for hint in exclude_name_hints)
+        and not _is_pvalue_like(c)
     ]
     if not metric_cols:
         raise ValueError(
-            "No numeric, non-count metric columns found in summary_df to plot "
-            f"(columns available: {list(summary_df.columns)})."
+            "No numeric, non-count, non-p-value metric columns found in "
+            f"summary_df to plot (columns available: {list(summary_df.columns)})."
         )
 
     ncols = min(4, len(metric_cols))
@@ -912,16 +1026,18 @@ def plot_headline_metrics_bar(summary_df: pd.DataFrame, output_path: Path) -> No
     axes_flat = axes.ravel()
 
     spaces = summary_df["space"].tolist()
+    colors = _get_palette_colors(len(spaces))
     for ax, col in zip(axes_flat, metric_cols):
-        ax.bar(spaces, summary_df[col].to_numpy(dtype=float))
-        ax.set_title(col.replace("validation_", ""), fontsize=10)
+        values = summary_df[col].to_numpy(dtype=float)
+        ax.bar(spaces, values, color=colors)
         ax.tick_params(axis="x", rotation=30, labelsize=8)
+        ax.set_title(col.replace("validation_", ""), fontsize=10)
     for ax in axes_flat[len(metric_cols):]:
         ax.axis("off")
 
     fig.suptitle("Headline validation metrics")
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
+    _savefig_atomic(fig, output_path)
     plt.close(fig)
 
 
@@ -1040,7 +1156,7 @@ def plot_input_compound_overlay(
     ax.set_title("Input-compound membership overlay")
     ax.legend(markerscale=3)
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
+    _savefig_atomic(fig, output_path)
     plt.close(fig)
 
 
