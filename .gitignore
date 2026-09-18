@@ -21,8 +21,9 @@ Thumbs.db
 .idea/
 .vscode/
 
-# ---- Data ----
+# ---- Data and Docs----
 data/*
+docs/*
 
 # ---- Local CCs ----
 local*

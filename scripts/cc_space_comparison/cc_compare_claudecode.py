@@ -130,7 +130,7 @@ SPACE_COLORS: tuple[str, str] = ("#2a78d6", "#eb6834")
 # recapitulation plot. Deliberately not the A/B pair: those two curves are
 # two cutoffs on one comparison, not two spaces, and reusing the space colors
 # there would imply a comparison that isn't being drawn.
-CUTOFF_COLORS: tuple[str, str] = ("#184f95", "#5598e7")
+CUTOFF_COLORS: tuple[str, str] = ("#2ca02c", "#5a8ad6")
 
 # Neutral ink for context marks (the y=x diagonal, the chance line, and the
 # "present in both" group in the membership overlay). Context is never a
@@ -2231,16 +2231,28 @@ def plot_recapitulation_roc(
             band["mean_tpr"] + band["std_tpr"],
             color=color, alpha=0.2, linewidth=0,
         )
-    ax.plot([0, 1], [0, 1], linestyle="--", color=NEUTRAL_INK, lw=1)
+    # Styling below deliberately mirrors Extended Data Fig. 8g,h so the two can
+    # sit side by side on a slide: green/blue cutoff ramp, dashed grey diagonal
+    # and grid, quarter-step ticks, FPR/TPR axis labels and a boxed lower-right
+    # legend reading ``pval:X.Xe-0Y - AUROC±std``.
+    ax.plot([0, 1], [0, 1], linestyle="--", color=NEUTRAL_INK, lw=1.5)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
-    ax.set_xlabel("False positive rate")
-    ax.set_ylabel("True positive rate")
+    ax.set_xticks([0.0, 0.25, 0.50, 0.75, 1.00])
+    ax.set_yticks([0.0, 0.25, 0.50, 0.75, 1.00])
+    ax.set_xlabel("FPR")
+    ax.set_ylabel("TPR")
     ax.set_title(
-        f"{ref_label} neighbors\nrecapitulated by {query_label}", fontsize=11
+        f"Recap. {ref_label} type III sign.\nusing {query_label} type III sign.",
+        fontsize=11,
     )
-    ax.legend(loc="lower right", fontsize=9, frameon=False)
-    _clean_axes(ax)
+    ax.grid(True, linestyle="--", color=NEUTRAL_INK, alpha=0.4, lw=0.8)
+    ax.set_axisbelow(True)
+    ax.legend(loc="lower right", fontsize=9, frameon=True, framealpha=1.0)
+    ax.set_aspect("equal", adjustable="box")
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color(NEUTRAL_INK)
     fig.tight_layout()
     _savefig_atomic(fig, output_path)
     plt.close(fig)
@@ -2613,6 +2625,120 @@ def _sanitize_filename(label: str) -> str:
     return "_".join(filter(None, safe.split("_")))
 
 
+def external_reference_recapitulation(
+    cc: Any,
+    reference_dataset: str,
+    sign3_by_label: dict[str, Any],
+    output_dir: Path,
+    pvals: tuple[float, ...] = (0.01, 0.001),
+    n_random: int = 2500,
+    n_subsamples: int = 5,
+    random_state: int | None = None,
+    max_pool: int = 50000,
+    make_plots: bool = True,
+) -> pd.DataFrame | None:
+    """Recapitulate an external CC space's neighbours with each compared space.
+
+    This reproduces the exact design of Extended Data Fig. 8g,h, whose caption
+    reads "Recapitulation of kNN **at X** type III signature level **using Y**
+    type III signatures": ``reference_dataset`` plays the role of X (it defines
+    the neighbour pairs) and each space in ``sign3_by_label`` plays the role of
+    Y (it is scored on recovering them). The paper holds Y fixed at D6.001 and
+    varies X; here X is held fixed and Y varies, so our two spaces land on the
+    paper's own axis and can be read against its panel values directly.
+
+    This is **not** the same measurement as the ``across_roc`` diagnosis
+    artifact behind ``across_roc_scatter.png``, even though that also scores a
+    space against D1.001. ``Diagnosis.cross_roc()`` defines positives as each
+    molecule's ``k=5`` nearest neighbours and draws a *balanced* negative set;
+    this test defines positives by a distance percentile (1% of pairs at
+    P=0.01) and treats every other pair as negative. Different positive sets
+    and very different class balance, so the two AUROCs are on different
+    scales and must never be compared with each other.
+
+    Parameters
+    ----------
+    cc : chemicalchecker.core.chemcheck.ChemicalChecker
+        Instance holding the reference dataset's sign3.
+    reference_dataset : str
+        Dataset code whose neighbours define the positive pairs (e.g.
+        ``"D1.001"``).
+    sign3_by_label : dict of str to DataSignature
+        Query spaces, keyed by display label.
+    output_dir : Path
+        Directory for the per-space figures and the summary CSV.
+    pvals : tuple of float, default (0.01, 0.001)
+        NN cutoffs, matching the paper's two curves.
+    n_random, n_subsamples, random_state, max_pool
+        Forwarded to :func:`get_shared_vectors` and
+        :func:`recapitulation_roc_band`.
+    make_plots : bool, default True
+        Whether to write the ROC figures as well as the CSV.
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        One row per (space, pval) with ``auroc``/``std``, or ``None`` if the
+        reference signature could not be loaded.
+    """
+    try:
+        ref_sign3 = cc.get_signature("sign3", "full", reference_dataset)
+    except Exception as exc:  # noqa: BLE001 -- CC raises bare Exception here
+        logger.warning(
+            "Skipping external-reference recapitulation against %s: %s",
+            reference_dataset, exc,
+        )
+        return None
+
+    rows: list[dict[str, Any]] = []
+    for label, query_sign3 in sign3_by_label.items():
+        _, ref_vec, query_vec = get_shared_vectors(
+            ref_sign3, query_sign3, max_pool=max_pool, random_state=random_state
+        )
+        for pval in pvals:
+            try:
+                band = recapitulation_roc_band(
+                    ref_vec, query_vec, pval, n_random, n_subsamples,
+                    random_state, np.linspace(0, 1, 200),
+                )
+            except RuntimeError as exc:
+                logger.warning(
+                    "%s vs %s at pval=%.4g: %s", reference_dataset, label, pval, exc
+                )
+                continue
+            rows.append({
+                "reference_dataset": reference_dataset,
+                "query_space": label,
+                "pval": pval,
+                "auroc": band["auroc"],
+                "std": band["std"],
+                "n_shared_compounds": int(ref_vec.shape[0]),
+            })
+            logger.info(
+                "%s neighbours recapitulated by %s at pval=%.0e: "
+                "AUROC=%.3f +/- %.3f",
+                reference_dataset, label, pval, band["auroc"], band["std"],
+            )
+        if make_plots:
+            name = (
+                f"recap_roc_{_sanitize_filename(reference_dataset)}"
+                f"_by_{_sanitize_filename(label)}.png"
+            )
+            _safe_plot(
+                name,
+                plot_recapitulation_roc,
+                ref_vec, query_vec, reference_dataset, label, output_dir / name,
+                pvals=pvals, n_random=n_random, n_subsamples=n_subsamples,
+                random_state=random_state,
+            )
+
+    if not rows:
+        return None
+    df = pd.DataFrame(rows)
+    df.to_csv(output_dir / "external_reference_recapitulation.csv", index=False)
+    return df
+
+
 def run_comparison(
     local_cc_dir_a: Path,
     dataset_a: str,
@@ -2626,6 +2752,7 @@ def run_comparison(
     n_subsamples: int = 5,
     random_state: int | None = None,
     max_pool: int = 50000,
+    reference_datasets: tuple[str, ...] = (),
     make_plots: bool = True,
 ) -> dict[str, Any]:
     """Run the full space-vs-space comparison and write outputs to disk.
@@ -2670,6 +2797,11 @@ def run_comparison(
     max_pool : int, default 50000
         Cap on shared compounds fetched for the recapitulation test; ``0``
         fetches all of them (see :func:`get_shared_vectors`).
+    reference_datasets : tuple of str, default ()
+        External CC dataset codes (e.g. ``("D1.001",)``) whose sign3
+        neighbours each compared space is scored on recovering, in the design
+        of Extended Data Fig. 8g,h. See
+        :func:`external_reference_recapitulation`.
     make_plots : bool, default True
         Whether to save comparison figures in addition to tables.
 
@@ -2905,5 +3037,22 @@ def run_comparison(
             ref_vec, query_vec, ref_label, query_label, output_dir / name,
             n_random=n_random, n_subsamples=n_subsamples, random_state=random_state,
         )
+
+    for reference_dataset in reference_datasets:
+        logger.info(
+            "Recapitulating %s neighbours with each compared space "
+            "(Ext. Data Fig. 8g,h design) ...", reference_dataset,
+        )
+        ext_df = external_reference_recapitulation(
+            cc_a, reference_dataset,
+            {label_a: sign3_a, label_b: sign3_b},
+            output_dir,
+            n_random=n_random, n_subsamples=n_subsamples,
+            random_state=random_state, max_pool=max_pool, make_plots=make_plots,
+        )
+        if ext_df is not None:
+            results.setdefault("external_reference_recapitulation", {})[
+                reference_dataset
+            ] = ext_df
 
     return results

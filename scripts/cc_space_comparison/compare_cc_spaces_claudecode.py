@@ -142,6 +142,22 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "equivalent and far cheaper. Pass 0 to load all shared compounds.",
     )
     parser.add_argument(
+        "--reference-dataset",
+        dest="reference_datasets",
+        action="append",
+        default=None,
+        metavar="CODE",
+        help="External CC dataset code (e.g. D1.001) whose sign3 nearest "
+        "neighbours BOTH compared spaces are scored on recovering, reproducing "
+        "the design of the protocol paper's Extended Data Fig. 8g,h. Repeatable. "
+        "Writes external_reference_recapitulation.csv plus one ROC-with-band "
+        "figure per compared space. Note this is NOT the same measurement as "
+        "the across_roc diagnosis artifact, which also scores against D1.001 "
+        "but defines positives as k=5 nearest neighbours with balanced "
+        "negatives rather than by a distance percentile -- the two AUROCs are "
+        "on different scales and must not be compared with each other.",
+    )
+    parser.add_argument(
         "--random-state", type=int, default=None, help="Random seed for reproducible subsampling."
     )
     parser.add_argument(
@@ -329,6 +345,7 @@ def main(argv: Sequence[str] | None = None) -> dict:
             n_subsamples=args.n_subsamples,
             random_state=args.random_state,
             max_pool=args.max_pool,
+            reference_datasets=tuple(args.reference_datasets or ()),
             make_plots=not args.no_plots,
         )
 
