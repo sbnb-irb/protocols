@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+from typing import Any
+
+import numpy as np
+import pandas as pd
 from scipy.spatial.distance import pdist, squareform
 from sklearn.metrics import auc, roc_auc_score, roc_curve
 from sklearn.metrics.pairwise import paired_cosine_distances
-from typing import Any
-import logging
-import numpy as np
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ SIGNATURE_PAIRS: tuple[tuple[str, str], ...] = (
 
 def background_distance_cutoff(
     vectors: np.ndarray,
-    pval: float = 0.01,
+    p_value_cutoff: float = 0.01,
     n_pairs: int = 10000,
     n_subsamples: int = 10,
     random_state: int | None = None,
@@ -37,9 +38,9 @@ def background_distance_cutoff(
     compound pairs** (~10,000 pairs x 10 subsamples), and then applied as a
     fixed absolute distance threshold.
 
-    The distinction matters. Taking the ``pval`` quantile *within* each
-    evaluation subsample -- which is what this module used to do -- forces
-    the positive rate to be exactly ``pval`` in every subsample and in both
+    The distinction matters. Taking the ``p_value_cutoff`` quantile *within*
+    each evaluation subsample instead would force the positive rate to be
+    exactly ``p_value_cutoff`` in every subsample and in both
     directions of a bidirectional comparison. That throws away the real
     signal of how many pairs are genuinely close in each space and makes the
     two directions artificially symmetric. A fixed background threshold lets
@@ -49,7 +50,7 @@ def background_distance_cutoff(
     ----------
     vectors : numpy.ndarray, shape (n_compounds, n_features)
         Vectors of the space whose distance distribution defines the cutoff.
-    pval : float, default 0.01
+    p_value_cutoff : float, default 0.01
         Lower-tail probability of the background pairwise cosine-distance
         distribution used as the nearest-neighbor cutoff.
     n_pairs : int, default 10000
@@ -81,14 +82,14 @@ def background_distance_cutoff(
         right = rng.integers(0, n, n_pairs)
         keep = left != right
         distances = paired_cosine_distances(vectors[left[keep]], vectors[right[keep]])
-        cutoffs.append(np.quantile(distances, pval))
+        cutoffs.append(np.quantile(distances, p_value_cutoff))
     return float(np.mean(cutoffs)), float(np.std(cutoffs))
 
 
 def _recapitulation_subsamples(
     ref_vectors: np.ndarray,
     query_vectors: np.ndarray,
-    cutoff: float,
+    distance_cutoff: float,
     n_random: int,
     n_subsamples: int,
     random_state: int | None,
@@ -98,7 +99,7 @@ def _recapitulation_subsamples(
 
     For each of ``n_subsamples`` draws of ``n_random`` compounds, every
     within-draw pair whose ``ref_vectors`` cosine distance is at or below
-    ``cutoff`` is labeled a positive, and the negated ``query_vectors``
+    ``distance_cutoff`` is labeled a positive, and the negated ``query_vectors``
     cosine distance for the same pair is used as the ranking score.
 
     Parameters
@@ -106,7 +107,7 @@ def _recapitulation_subsamples(
     ref_vectors, query_vectors : numpy.ndarray
         Row-aligned vectors. Nearest neighbors are defined on
         ``ref_vectors``; ``query_vectors`` is scored on recovering them.
-    cutoff : float
+    distance_cutoff : float
         Absolute cosine-distance threshold from
         :func:`background_distance_cutoff`.
     n_random : int
@@ -141,7 +142,7 @@ def _recapitulation_subsamples(
         d_ref = squareform(pdist(ref_vectors[idx], metric="cosine"))
         d_query = squareform(pdist(query_vectors[idx], metric="cosine"))
         iu = np.triu_indices_from(d_ref, k=1)
-        y_true = (d_ref[iu] <= cutoff).astype(int)
+        y_true = (d_ref[iu] <= distance_cutoff).astype(int)
         n_pos = int(y_true.sum())
         if n_pos == 0 or n_pos == len(y_true):
             logger.warning(
@@ -149,7 +150,7 @@ def _recapitulation_subsamples(
                 "(%.5f); skipping it.",
                 n_pos,
                 len(y_true),
-                cutoff,
+                distance_cutoff,
             )
             continue
         y_score = -d_query[iu]
@@ -162,8 +163,8 @@ def _recapitulation_subsamples(
             aurocs.append(float(auc(fpr, tpr)))
     if not aurocs:
         raise RuntimeError(
-            f"All {n_subsamples} subsamples were degenerate at cutoff {cutoff:.5f}. "
-            "Try a larger --n-random or a less extreme --pval."
+            f"All {n_subsamples} subsamples were degenerate at cutoff {distance_cutoff:.5f}. "
+            "Try a larger n_random or a less extreme p_value_cutoff."
         )
     return aurocs, tprs, pos_rates
 
@@ -171,7 +172,7 @@ def _recapitulation_subsamples(
 def cosine_nn_recapitulation_auroc(
     ref_vectors: np.ndarray,
     query_vectors: np.ndarray,
-    pval: float = 0.01,
+    p_value_cutoff: float = 0.01,
     n_random: int = 2500,
     n_subsamples: int = 5,
     random_state: int | None = None,
@@ -180,7 +181,7 @@ def cosine_nn_recapitulation_auroc(
 
     Implements the recapitulation test of Comajuncosa-Creus et al. (Fig. 3a):
     compound pairs that are nearest neighbors in ``ref_vectors`` -- cosine
-    distance at or below the ``pval`` cutoff of the *background* pairwise
+    distance at or below the ``p_value_cutoff`` cutoff of the *background* pairwise
     distance distribution -- are positives, and the ``query_vectors`` cosine
     distance for the same pairs is the ranking score. Repeated over
     ``n_subsamples`` draws of ``n_random`` compounds and averaged.
@@ -192,7 +193,7 @@ def cosine_nn_recapitulation_auroc(
     query_vectors : numpy.ndarray, shape (n_compounds, n_features)
         Vectors evaluated on their ability to recapitulate those neighbors.
         Must be row-aligned with ``ref_vectors``.
-    pval : float, default 0.01
+    p_value_cutoff : float, default 0.01
         Background-distribution p-value defining the NN cutoff.
     n_random : int, default 2500
         Compounds subsampled per repetition (the paper's value).
@@ -207,39 +208,44 @@ def cosine_nn_recapitulation_auroc(
         ``auroc``, ``std``, ``cutoff``, ``cutoff_std``, ``mean_positive_rate``
         and ``n_valid_subsamples``. ``mean_positive_rate`` is reported because
         under a fixed background cutoff it is a real property of the space
-        pair rather than a constant pinned to ``pval``.
+        pair rather than a constant pinned to ``p_value_cutoff``.
 
     Raises
     ------
     RuntimeError
         If every subsample produced a degenerate label set.
     """
-    cutoff, cutoff_std = background_distance_cutoff(
-        ref_vectors, pval=pval, random_state=random_state
+    distance_cutoff, distance_cutoff_std = background_distance_cutoff(
+        ref_vectors, p_value_cutoff=p_value_cutoff, random_state=random_state
     )
     logger.debug(
         "NN cutoff at pval=%.4g: cosine distance <= %.5f (+/- %.5f across "
         "background subsamples)",
-        pval,
-        cutoff,
-        cutoff_std,
+        p_value_cutoff,
+        distance_cutoff,
+        distance_cutoff_std,
     )
     aurocs, _, pos_rates = _recapitulation_subsamples(
-        ref_vectors, query_vectors, cutoff, n_random, n_subsamples, random_state
+        ref_vectors,
+        query_vectors,
+        distance_cutoff,
+        n_random,
+        n_subsamples,
+        random_state,
     )
     return {
         "auroc": float(np.mean(aurocs)),
         "std": float(np.std(aurocs)),
-        "cutoff": cutoff,
-        "cutoff_std": cutoff_std,
+        "cutoff": distance_cutoff,
+        "cutoff_std": distance_cutoff_std,
         "mean_positive_rate": float(np.mean(pos_rates)),
         "n_valid_subsamples": len(aurocs),
     }
 
 
 def get_shared_vectors(
-    sign3_a,
-    sign3_b,
+    signature_a,
+    signature_b,
     max_pool: int = 50000,
     random_state: int | None = None,
 ) -> tuple[list[str], np.ndarray, np.ndarray]:
@@ -248,9 +254,8 @@ def get_shared_vectors(
     Two sign3 spaces each cover essentially the whole ~1.2M-compound CC
     universe, so the shared key set is near-total. Materializing it in full
     for both spaces costs roughly ``2 x 1.2e6 x 128 x 4 bytes`` = **1.2 GB**
-    of resident memory, which is almost certainly what produced the
-    truncated, zero-byte figures seen in earlier runs of this module: they
-    appeared at precisely the point where both arrays were live.
+    of resident memory, enough to make plotting jobs that run alongside it
+    fail (observed as truncated, zero-byte figures).
 
     Nothing downstream needs the full set. The recapitulation test samples
     ``n_random`` (2,500) compounds per repetition and the background cutoff
@@ -260,7 +265,7 @@ def get_shared_vectors(
 
     Parameters
     ----------
-    sign3_a, sign3_b : chemicalchecker.core.signature_data.DataSignature
+    signature_a, signature_b : chemicalchecker.core.signature_data.DataSignature
         Fitted ``sign3`` signature objects for the two spaces being compared.
     max_pool : int, default 50000
         Cap on the number of shared compounds fetched. Pass ``0`` to disable
@@ -283,7 +288,7 @@ def get_shared_vectors(
         If the two spaces' ``get_vectors()`` calls return keys in different
         order (should not happen for an identical input key set).
     """
-    shared = sorted(set(sign3_a.keys) & set(sign3_b.keys))
+    shared = sorted(set(signature_a.keys) & set(signature_b.keys))
     n_shared = len(shared)
     if n_shared < 50:
         raise ValueError(
@@ -300,12 +305,14 @@ def get_shared_vectors(
         pool = [shared[i] for i in np.sort(idx)]
         logger.info(
             "%d shared compounds; sampling a pool of %d for the recapitulation "
-            "test (set --max-pool 0 to use all, at ~1.2 GB peak memory).",
+            "test (max_pool=0 uses all, at ~1.2 GB peak memory).",
             n_shared,
             max_pool,
         )
     else:
-        logger.info("Using all %d shared compounds for the recapitulation test.", n_shared)
+        logger.info(
+            "Using all %d shared compounds for the recapitulation test.", n_shared
+        )
 
     # DataSignature.__getitem__ only supports integer fancy indexing
     # (internally slice(min(key), max(key)+1)), which silently breaks for a
@@ -313,9 +320,9 @@ def get_shared_vectors(
     # fetch-rows-by-key method and handles this correctly. It returns
     # (sorted_keys_found, vectors); both calls query the same key set, so
     # the returned orders match and the arrays are already row-aligned.
-    inks_a, vec_a = sign3_a.get_vectors(pool)
-    inks_b, vec_b = sign3_b.get_vectors(pool)
-    if vec_a is None or vec_b is None:
+    inks_a, vectors_a = signature_a.get_vectors(pool)
+    inks_b, vectors_b = signature_b.get_vectors(pool)
+    if vectors_a is None or vectors_b is None:
         raise ValueError("get_vectors() returned no rows for the shared compound set.")
     if not np.array_equal(inks_a, inks_b):
         raise RuntimeError(
@@ -323,14 +330,14 @@ def get_shared_vectors(
             "this should not happen for an identical input key set; inspect "
             "get_vectors() behavior in your chemicalchecker version."
         )
-    return list(inks_a), vec_a, vec_b
+    return list(inks_a), vectors_a, vectors_b
 
 
 def shared_key_recapitulation(
-    vec_a: np.ndarray,
-    vec_b: np.ndarray,
+    vectors_a: np.ndarray,
+    vectors_b: np.ndarray,
     n_shared_compounds: int,
-    pval: float = 0.01,
+    p_value_cutoff: float = 0.01,
     n_random: int = 2500,
     n_subsamples: int = 5,
     random_state: int | None = None,
@@ -351,13 +358,13 @@ def shared_key_recapitulation(
 
     Parameters
     ----------
-    vec_a, vec_b : numpy.ndarray
+    vectors_a, vectors_b : numpy.ndarray
         Row-aligned sign3 vectors (see :func:`get_shared_vectors`).
     n_shared_compounds : int
         Total number of shared compounds, recorded for the report. This is
-        the full intersection size, which may exceed ``len(vec_a)`` when a
+        the full intersection size, which may exceed ``len(vectors_a)`` when a
         pool subsample was taken.
-    pval : float, default 0.01
+    p_value_cutoff : float, default 0.01
         Background-distribution p-value defining the NN cutoff.
     n_random : int, default 2500
         Compounds subsampled per repetition.
@@ -374,17 +381,25 @@ def shared_key_recapitulation(
         output of :func:`cosine_nn_recapitulation_auroc`.
     """
     a_by_b = cosine_nn_recapitulation_auroc(
-        vec_a, vec_b, pval=pval, n_random=n_random,
-        n_subsamples=n_subsamples, random_state=random_state,
+        vectors_a,
+        vectors_b,
+        p_value_cutoff=p_value_cutoff,
+        n_random=n_random,
+        n_subsamples=n_subsamples,
+        random_state=random_state,
     )
     b_by_a = cosine_nn_recapitulation_auroc(
-        vec_b, vec_a, pval=pval, n_random=n_random,
-        n_subsamples=n_subsamples, random_state=random_state,
+        vectors_b,
+        vectors_a,
+        p_value_cutoff=p_value_cutoff,
+        n_random=n_random,
+        n_subsamples=n_subsamples,
+        random_state=random_state,
     )
     return {
         "n_shared_compounds": int(n_shared_compounds),
-        "n_pool_compounds": int(vec_a.shape[0]),
-        "pval": pval,
+        "n_pool_compounds": int(vectors_a.shape[0]),
+        "pval": p_value_cutoff,
         "a_recap_by_b": a_by_b,
         "b_recap_by_a": b_by_a,
     }
@@ -393,7 +408,7 @@ def shared_key_recapitulation(
 def recapitulation_roc_band(
     ref_vectors: np.ndarray,
     query_vectors: np.ndarray,
-    pval: float,
+    p_value_cutoff: float,
     n_random: int,
     n_subsamples: int,
     random_state: int | None,
@@ -412,7 +427,7 @@ def recapitulation_roc_band(
     ref_vectors, query_vectors : numpy.ndarray
         Row-aligned vectors; NN pairs are defined on ``ref_vectors`` and
         recapitulation is scored against ``query_vectors``.
-    pval : float
+    p_value_cutoff : float
         Background-distribution p-value defining the NN cutoff.
     n_random : int
         Compounds subsampled per repetition.
@@ -434,9 +449,17 @@ def recapitulation_roc_band(
     RuntimeError
         If every subsample produced a degenerate label set.
     """
-    cutoff, _ = background_distance_cutoff(ref_vectors, pval=pval, random_state=random_state)
+    distance_cutoff, _ = background_distance_cutoff(
+        ref_vectors, p_value_cutoff=p_value_cutoff, random_state=random_state
+    )
     aurocs, tprs, pos_rates = _recapitulation_subsamples(
-        ref_vectors, query_vectors, cutoff, n_random, n_subsamples, random_state, fpr_grid
+        ref_vectors,
+        query_vectors,
+        distance_cutoff,
+        n_random,
+        n_subsamples,
+        random_state,
+        fpr_grid,
     )
     tprs_arr = np.vstack(tprs)
     return {
@@ -444,7 +467,7 @@ def recapitulation_roc_band(
         "std_tpr": tprs_arr.std(axis=0),
         "auroc": float(np.mean(aurocs)),
         "std": float(np.std(aurocs)),
-        "cutoff": cutoff,
+        "cutoff": distance_cutoff,
         "mean_positive_rate": float(np.mean(pos_rates)),
     }
 
@@ -469,7 +492,7 @@ def get_signature_type_vectors(
     cc : chemicalchecker.core.chemcheck.ChemicalChecker
         CC instance the dataset belongs to.
     dataset_code : str
-        CC dataset code, e.g. ``"D6.002"``.
+        CC dataset code, e.g. ``"M1.001"``.
     sign_types : tuple of str
         Signature types to fetch, e.g. ``("sign0", "sign1", "sign2", "sign3")``.
 
@@ -507,7 +530,10 @@ def get_signature_type_vectors(
         if zero.any():
             logger.warning(
                 "%s %s: dropping %d compound(s) with a zero-norm vector "
-                "(cosine distance undefined).", dataset_code, st, int(zero.sum()),
+                "(cosine distance undefined).",
+                dataset_code,
+                st,
+                int(zero.sum()),
             )
         good &= ~zero
     if not good.all():
@@ -530,7 +556,7 @@ def signature_recovery(
     dataset_code: str,
     label: str,
     pairs: tuple[tuple[str, str], ...] = SIGNATURE_PAIRS,
-    pval: float = 0.01,
+    p_value_cutoff: float = 0.01,
     n_random: int = 2500,
     n_subsamples: int = 5,
     random_state: int | None = None,
@@ -539,7 +565,7 @@ def signature_recovery(
 
     For each ``(lower, higher)`` pair, nearest-neighbour compound pairs are
     defined at the *lower* signature type using the background-distribution
-    cutoff at ``pval``, and the *higher* type is scored by AUROC on
+    cutoff at ``p_value_cutoff``, and the *higher* type is scored by AUROC on
     recovering them. This is the paper's own check that abstraction from
     sign0 up to sign3 preserves the similarity structure of the raw data;
     running it for two spaces side by side shows whether one of them loses
@@ -557,12 +583,12 @@ def signature_recovery(
     cc : chemicalchecker.core.chemcheck.ChemicalChecker
         CC instance the dataset belongs to.
     dataset_code : str
-        CC dataset code, e.g. ``"D6.002"``.
+        CC dataset code, e.g. ``"M1.001"``.
     label : str
         Display label for the space, carried into the returned frame.
     pairs : tuple of (str, str), default SIGNATURE_PAIRS
         ``(lower, higher)`` signature-type combinations to evaluate.
-    pval : float, default 0.01
+    p_value_cutoff : float, default 0.01
         Background-distribution p-value defining the NN cutoff.
     n_random : int, default 2500
         Compounds drawn per repetition, capped by the available pool.
@@ -588,15 +614,22 @@ def signature_recovery(
         logger.info(
             "%s: pool of %d compounds is smaller than n_random=%d; drawing %d "
             "(80%%) per repetition so the reported std is meaningful.",
-            dataset_code, n, n_random, draw,
+            dataset_code,
+            n,
+            n_random,
+            draw,
         )
 
     rows = []
     for lower, higher in pairs:
         try:
             res = cosine_nn_recapitulation_auroc(
-                vectors[lower], vectors[higher], pval=pval, n_random=draw,
-                n_subsamples=n_subsamples, random_state=random_state,
+                vectors[lower],
+                vectors[higher],
+                p_value_cutoff=p_value_cutoff,
+                n_random=draw,
+                n_subsamples=n_subsamples,
+                random_state=random_state,
             )
         except (RuntimeError, ValueError) as exc:
             logger.warning(
@@ -619,6 +652,11 @@ def signature_recovery(
         )
         logger.info(
             "%s %s->%s recovery: AUROC=%.3f +/- %.3f (n=%d)",
-            dataset_code, lower, higher, res["auroc"], res["std"], n,
+            dataset_code,
+            lower,
+            higher,
+            res["auroc"],
+            res["std"],
+            n,
         )
     return pd.DataFrame(rows)
