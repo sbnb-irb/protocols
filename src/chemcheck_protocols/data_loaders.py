@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Collection
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -90,7 +91,41 @@ def load_wide_matrix(source: DataSource) -> pd.DataFrame:
     return feature_matrix
 
 
-def build_sign0_inputs(source: DataSource) -> dict[str, Any]:
+def load_key_list(key_list_path: str | os.PathLike[str]) -> list[str]:
+    """
+    Read a list of InChIKeys, one per line (blank lines and ``#`` comments ignored).
+
+    Parameters
+    ----------
+    key_list_path : str or os.PathLike
+        The text file.
+
+    Returns
+    -------
+    list of str
+        The keys, in file order.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the file does not exist.
+    ValueError
+        If the file lists no keys.
+    """
+    key_list_path = Path(key_list_path)
+    if not key_list_path.is_file():
+        raise FileNotFoundError(f"Key list not found: {key_list_path}")
+    lines = key_list_path.read_text(encoding="utf-8").splitlines()
+    keys = [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+    if not keys:
+        raise ValueError(f"{key_list_path} lists no keys")
+    logger.info("Loaded %d keys from %s", len(keys), key_list_path)
+    return keys
+
+
+def build_sign0_inputs(
+    source: DataSource, holdout_keys: Collection[str] | None = None
+) -> dict[str, Any]:
     """
     Translate a data source into the keyword arguments ``sign0.fit`` expects.
 
@@ -103,6 +138,9 @@ def build_sign0_inputs(source: DataSource) -> dict[str, Any]:
     ----------
     source : DataSource
         The dataset's raw data.
+    holdout_keys : collection of str, optional
+        Molecules to leave out of the space entirely (``wide_matrix`` only), so
+        they can be used to evaluate sign3 on unseen molecules.
 
     Returns
     -------
@@ -113,9 +151,31 @@ def build_sign0_inputs(source: DataSource) -> dict[str, Any]:
     ------
     FileNotFoundError
         If the source file does not exist.
+    ValueError
+        If ``holdout_keys`` is given for a format other than ``wide_matrix``.
     """
+    if holdout_keys is not None and source.format != "wide_matrix":
+        raise ValueError(
+            f"Held-out molecules are only supported for wide_matrix sources, not {source.format}"
+        )
     if source.format == "wide_matrix":
         feature_matrix = load_wide_matrix(source)
+        if holdout_keys is not None:
+            held_out = feature_matrix.index.isin(list(holdout_keys))
+            n_absent = len(set(holdout_keys)) - int(held_out.sum())
+            logger.info(
+                "Holding out %d of %d molecules from %s",
+                held_out.sum(),
+                len(feature_matrix),
+                source.path,
+            )
+            if n_absent:
+                logger.warning(
+                    "%d held-out keys are not in %s; nothing to remove for them",
+                    n_absent,
+                    source.path,
+                )
+            feature_matrix = feature_matrix.loc[~held_out]
         return {
             "X": feature_matrix.values,
             "keys": list(feature_matrix.index),

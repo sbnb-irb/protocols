@@ -205,3 +205,15 @@ def test_sampler_missing_from_chemicalchecker_is_reported(monkeypatch):
     )
     with pytest.raises(ImportError, match="has no BinaryJaccardTripletSampler"):
         resolve_triplet_sampler(TripletSamplerConfig(method="binary_jaccard"))
+
+
+def test_holdout_keys_file_reaches_sign0(tmp_path):
+    (tmp_path / "holdout.txt").write_text("AAAA-X\n")
+    matrix_file = tmp_path / "raw.csv"
+    config = dataset_config(tmp_path, holdout_keys=str(tmp_path / "holdout.txt"))
+    matrix_file.write_text("inchikey,f1\nAAAA-X,1\nBBBB-X,1\n")
+    result = run_signature_pipeline(
+        FakeCC(), config, diagnosis_plots=False, max_stage="sign0"
+    )
+    _, sign0_kwargs = result["sign0"].fit_calls[0]
+    assert sign0_kwargs["keys"] == ["BBBB-X"]

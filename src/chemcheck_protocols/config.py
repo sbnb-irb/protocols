@@ -154,6 +154,10 @@ class DatasetConfig(_ConfigModel):
     triplet_sampler : TripletSamplerConfig, optional
         Sampler for sign3's training triplets; chemicalchecker's default
         (neighbours in sign1) when omitted.
+    holdout_keys : pathlib.Path, optional
+        Text file of InChIKeys (one per line) left out of the space before
+        sign0, to evaluate sign3 on unseen molecules. Use the same file in the
+        runs you compare. ``wide_matrix`` sources only.
     """
 
     key: str = Field(min_length=1)
@@ -163,6 +167,15 @@ class DatasetConfig(_ConfigModel):
     fit: FitOptions = Field(default_factory=FitOptions)
     reference_spaces: Literal["new_space"] | ExtendedSpace = "new_space"
     triplet_sampler: TripletSamplerConfig | None = None
+    holdout_keys: ConfigPath | None = None
+
+    @model_validator(mode="after")
+    def _holdout_needs_wide_matrix(self) -> DatasetConfig:
+        if self.holdout_keys is not None and self.source.format != "wide_matrix":
+            raise ValueError(
+                f"holdout_keys needs a wide_matrix source, not {self.source.format}"
+            )
+        return self
 
     @model_validator(mode="after")
     def _triplets_set_in_one_place(self) -> DatasetConfig:

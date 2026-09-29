@@ -53,6 +53,10 @@ def test_relative_paths_resolve_against_config_file_folder(tmp_path):
             {"triplet_sampler": {"method": "jaccard"}},
             "Input should be 'binary_jaccard'",
         ),
+        (
+            {"source": {"format": "cc_h5", "path": "x.h5"}, "holdout_keys": "h.txt"},
+            "holdout_keys needs a wide_matrix source",
+        ),
     ],
 )
 def test_invalid_dataset_config_is_rejected(overrides, message):

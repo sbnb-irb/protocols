@@ -26,7 +26,7 @@ from .config import (
     TripletSamplerConfig,
     check_stage_range,
 )
-from .data_loaders import build_sign0_inputs
+from .data_loaders import build_sign0_inputs, load_key_list
 
 logger = logging.getLogger(__name__)
 
@@ -513,10 +513,15 @@ def run_signature_pipeline(
 
     for stage in stages:
         if stage == "sign0":
+            holdout_keys = (
+                None
+                if dataset_config.holdout_keys is None
+                else load_key_list(dataset_config.holdout_keys)
+            )
             signatures["sign0"] = fit_sign0(
                 cc_instance,
                 dataset_code,
-                build_sign0_inputs(dataset_config.source),
+                build_sign0_inputs(dataset_config.source, holdout_keys),
                 **fit_options.sign0,
             )
         elif stage == "sign1":
