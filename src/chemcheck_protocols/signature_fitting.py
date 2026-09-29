@@ -286,6 +286,9 @@ def build_reference_sign2_spaces(
     ------
     ValueError
         If ``extends`` is not an exemplary space.
+    FileNotFoundError
+        If any of these sign2 spaces is not available in the CC instance
+        (e.g. ``custom_data_path`` was not linked).
     """
     exemplary_codes = list(cc_instance.datasets_exemplary())
     if extends is None:
@@ -298,9 +301,20 @@ def build_reference_sign2_spaces(
         raise ValueError(
             f"{extends} is not an exemplary CC space; choose one of {exemplary_codes}"
         )
-    return [
+    reference_spaces = [
         cc_instance.get_signature("sign2", "full", code) for code in reference_codes
     ]
+    missing = [
+        code
+        for code, signature in zip(reference_codes, reference_spaces)
+        if not signature.available()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"sign2 missing for {missing} in this CC instance; sign3 needs all "
+            f"{len(reference_codes)} reference spaces (link them with custom_data_path)"
+        )
+    return reference_spaces
 
 
 def fit_sign3(

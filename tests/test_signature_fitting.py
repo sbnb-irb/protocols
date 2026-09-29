@@ -88,6 +88,11 @@ def test_extending_a_non_exemplary_space_is_rejected():
         build_reference_sign2_spaces(FakeCC(), "M1.002", extends="M1.001")
 
 
+def test_missing_reference_sign2_is_rejected():
+    with pytest.raises(FileNotFoundError, match=r"sign2 missing for \['A2.001'\]"):
+        build_reference_sign2_spaces(FakeCC(unfitted={("sign2", "A2.001")}), "M1.001")
+
+
 def test_cc_universe_skips_spaces_without_sign2():
     universe = get_cc_universe(FakeCC(unfitted={("sign2", "A2.001")}))
     assert len(universe) == 24

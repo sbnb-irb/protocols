@@ -106,6 +106,15 @@ def fit_signatures(args: argparse.Namespace, config: RunConfig) -> int:
         elif "CC_CONFIG" not in os.environ:
             logger.error("No cc_config in %s and CC_CONFIG is not set", args.config)
             return 2
+        if config.custom_data_path is not None and not any(
+            config.custom_data_path.glob("*.h5")
+        ):
+            logger.error(
+                "No *.h5 signatures in custom_data_path %s; check the path and that it "
+                "is bound into the container",
+                config.custom_data_path,
+            )
+            return 2
         from chemicalchecker import ChemicalChecker
 
         ChemicalChecker.set_verbosity(config.cc_verbosity)
