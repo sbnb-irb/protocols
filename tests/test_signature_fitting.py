@@ -15,6 +15,7 @@ class FakeSignature:
     def __init__(self, cctype, dataset_code, keys=(), available=True):
         self.cctype, self.dataset_code = cctype, dataset_code
         self.keys, self._available = list(keys), available
+        self.data_path = f"/cc/{dataset_code}/{cctype}.h5"
         self.fit_calls = []
 
     def clear_all(self):
@@ -31,8 +32,10 @@ class FakeSignature:
 
 
 class FakeCC:
-    def __init__(self, missing_sign2=()):
-        self.signatures, self.missing_sign2 = {}, set(missing_sign2)
+    """Every signature counts as fitted except the (cctype, dataset_code) pairs in ``unfitted``."""
+
+    def __init__(self, unfitted=()):
+        self.signatures, self.unfitted = {}, set(unfitted)
 
     def datasets_exemplary(self):
         return (f"{level}{number}.001" for level in "ABCDE" for number in "12345")
@@ -42,7 +45,7 @@ class FakeCC:
         if key not in self.signatures:
             keys = [f"{dataset_code}-mol"]
             self.signatures[key] = FakeSignature(
-                cctype, dataset_code, keys, dataset_code not in self.missing_sign2
+                cctype, dataset_code, keys, key not in self.unfitted
             )
         return self.signatures[key]
 
@@ -86,7 +89,7 @@ def test_extending_a_non_exemplary_space_is_rejected():
 
 
 def test_cc_universe_skips_spaces_without_sign2():
-    universe = get_cc_universe(FakeCC(missing_sign2={"A2.001"}))
+    universe = get_cc_universe(FakeCC(unfitted={("sign2", "A2.001")}))
     assert len(universe) == 24
     assert "A2.001-mol" not in universe
 
@@ -120,3 +123,31 @@ def test_fit_options_reach_each_signature_fit(tmp_path):
     assert sign0_kwargs["keys"] == ["AAAA-X"]
     assert sign3_kwargs["complete_universe"] == "full"
     assert len(reference_spaces[0]) == 26
+
+
+def test_start_stage_loads_its_inputs_instead_of_refitting(tmp_path):
+    result = run_signature_pipeline(
+        FakeCC(), dataset_config(tmp_path), diagnosis_plots=False, start_stage="sign3"
+    )
+    assert list(result) == ["sign1", "sign2", "sign3"]
+    assert result["sign1"].fit_calls == result["sign2"].fit_calls == []
+    (_, sign2, sign1), _ = result["sign3"].fit_calls[0]
+    assert (sign2, sign1) == (result["sign2"], result["sign1"])
+
+
+def test_start_stage_with_unfitted_input_is_rejected(tmp_path):
+    cc_instance = FakeCC(unfitted={("neig1", "M1.001")})
+    with pytest.raises(FileNotFoundError, match="M1.001 neig1 is not fitted"):
+        run_signature_pipeline(
+            cc_instance,
+            dataset_config(tmp_path),
+            start_stage="sign2",
+            max_stage="sign2",
+        )
+
+
+def test_start_stage_after_max_stage_is_rejected(tmp_path):
+    with pytest.raises(ValueError, match="comes after max_stage"):
+        run_signature_pipeline(
+            FakeCC(), dataset_config(tmp_path), start_stage="sign3", max_stage="sign2"
+        )

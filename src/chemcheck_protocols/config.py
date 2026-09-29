@@ -25,11 +25,29 @@ from pydantic import (
 
 logger = logging.getLogger(__name__)
 
-MaxStage = Literal["sign0", "sign1", "sign2", "sign3"]
-PIPELINE_STAGES: tuple[str, ...] = get_args(MaxStage)
+PipelineStage = Literal["sign0", "sign1", "sign2", "sign3"]
+PIPELINE_STAGES: tuple[str, ...] = get_args(PipelineStage)
 
 # CC dataset codes: coordinate (level letter + digit) and a three-digit version, e.g. "B1.002".
 DATASET_CODE_PATTERN = r"^[A-Z][0-9]\.[0-9]{3}$"
+
+
+def check_stage_range(start_stage: str, max_stage: str) -> None:
+    """
+    Check that ``start_stage`` does not come after ``max_stage`` in :data:`PIPELINE_STAGES`.
+
+    Raises
+    ------
+    ValueError
+        If either is not a pipeline stage, or ``start_stage`` comes after ``max_stage``.
+    """
+    for name, stage in (("start_stage", start_stage), ("max_stage", max_stage)):
+        if stage not in PIPELINE_STAGES:
+            raise ValueError(f"{name} must be one of {PIPELINE_STAGES}, got {stage!r}")
+    if PIPELINE_STAGES.index(start_stage) > PIPELINE_STAGES.index(max_stage):
+        raise ValueError(
+            f"start_stage {start_stage!r} comes after max_stage {max_stage!r}"
+        )
 
 
 def _resolve_against_config_dir(path: Path, info: ValidationInfo) -> Path:
@@ -152,6 +170,9 @@ class RunConfig(_ConfigModel):
         ``mapping_dict`` so it doesn't query online repositories.
     log_dir : pathlib.Path, default "logs"
         Folder for the run's log file.
+    start_stage : {"sign0", "sign1", "sign2", "sign3"}, default "sign0"
+        First signature type to fit; earlier ones are loaded from ``cc_root``
+        (e.g. "sign3" to fit only sign3 on an already checked sign2).
     max_stage : {"sign0", "sign1", "sign2", "sign3"}, default "sign3"
         Last signature type to fit.
     diagnosis_plots : bool, default True
@@ -167,7 +188,8 @@ class RunConfig(_ConfigModel):
     custom_data_path: ConfigPath | None = None
     inchikey_mapping: ConfigPath | None = None
     log_dir: ConfigPath = Path("logs")
-    max_stage: MaxStage = "sign3"
+    start_stage: PipelineStage = "sign0"
+    max_stage: PipelineStage = "sign3"
     diagnosis_plots: bool = True
     cc_verbosity: Literal["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"] = "INFO"
     datasets: list[DatasetConfig] = Field(min_length=1)
@@ -179,6 +201,7 @@ class RunConfig(_ConfigModel):
             duplicates = sorted({value for value in values if values.count(value) > 1})
             if duplicates:
                 raise ValueError(f"Duplicate dataset {field_name}(s): {duplicates}")
+        check_stage_range(self.start_stage, self.max_stage)
         return self
 
     def select_datasets(self, keys: list[str] | None) -> list[DatasetConfig]:

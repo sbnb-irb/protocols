@@ -58,6 +58,12 @@ def test_duplicate_dataset_codes_are_rejected():
         RunConfig.model_validate(raw)
 
 
+def test_start_stage_after_max_stage_is_rejected():
+    raw = {**minimal_config(), "start_stage": "sign3", "max_stage": "sign1"}
+    with pytest.raises(ValidationError, match="comes after max_stage"):
+        RunConfig.model_validate(raw)
+
+
 def test_select_datasets_rejects_unknown_keys():
     config = RunConfig.model_validate(minimal_config())
     assert [d.key for d in config.select_datasets(None)] == ["m1"]

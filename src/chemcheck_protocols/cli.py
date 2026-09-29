@@ -17,7 +17,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .config import PIPELINE_STAGES, RunConfig, load_run_config
+from .config import PIPELINE_STAGES, RunConfig, check_stage_range, load_run_config
 from .data_loaders import load_inchikey_mapping
 from .run_logging import (
     generate_log_filename,
@@ -55,6 +55,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only fit these dataset keys from the configuration (default: all of them).",
     )
     fit.add_argument(
+        "--start-stage",
+        choices=PIPELINE_STAGES,
+        default=None,
+        help="First signature type to fit; earlier ones are loaded from cc_root instead of "
+        "refitted. Overrides start_stage in the configuration (default: sign0).",
+    )
+    fit.add_argument(
         "--max-stage",
         choices=PIPELINE_STAGES,
         default=None,
@@ -85,6 +92,7 @@ def fit_signatures(args: argparse.Namespace, config: RunConfig) -> int:
     int
         Exit code: 0 when every selected dataset was fitted.
     """
+    start_stage = args.start_stage or config.start_stage
     max_stage = args.max_stage or config.max_stage
     diagnosis_plots = config.diagnosis_plots and not args.no_diagnosis_plots
     datasets = config.select_datasets(args.datasets)
@@ -112,16 +120,20 @@ def fit_signatures(args: argparse.Namespace, config: RunConfig) -> int:
             str(config.cc_root), dbconnect=False, custom_data_path=custom_data_path
         )
         mapping_dict = load_inchikey_mapping(config.inchikey_mapping)
-        needs_universe = PIPELINE_STAGES.index(max_stage) >= PIPELINE_STAGES.index(
-            "sign2"
+        # The universe overlap is only reported when sign2 is fitted.
+        fits_sign2 = (
+            PIPELINE_STAGES.index(start_stage)
+            <= PIPELINE_STAGES.index("sign2")
+            <= PIPELINE_STAGES.index(max_stage)
         )
-        cc_universe = get_cc_universe(cc_instance) if needs_universe else None
+        cc_universe = get_cc_universe(cc_instance) if fits_sign2 else None
 
         for dataset in datasets:
             logger.info(
-                "===== Fitting %s (%s) up to %s =====",
+                "===== Fitting %s (%s) from %s to %s =====",
                 dataset.name,
                 dataset.dataset_code,
+                start_stage,
                 max_stage,
             )
             run_signature_pipeline(
@@ -130,6 +142,7 @@ def fit_signatures(args: argparse.Namespace, config: RunConfig) -> int:
                 mapping_dict=mapping_dict,
                 cc_universe=cc_universe,
                 diagnosis_plots=diagnosis_plots,
+                start_stage=start_stage,
                 max_stage=max_stage,
             )
         logger.info("Fitted datasets: %s", [dataset.key for dataset in datasets])
@@ -155,6 +168,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         config = load_run_config(args.config)
         config.select_datasets(args.datasets)
+        check_stage_range(
+            args.start_stage or config.start_stage, args.max_stage or config.max_stage
+        )
     except (FileNotFoundError, ValidationError, ValueError) as error:
         parser.error(str(error))
     return args.handler(args, config)

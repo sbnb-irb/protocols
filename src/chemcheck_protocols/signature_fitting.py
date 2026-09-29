@@ -17,7 +17,13 @@ from typing import Any
 
 import numpy as np
 
-from .config import PIPELINE_STAGES, DatasetConfig, ExtendedSpace, MaxStage
+from .config import (
+    PIPELINE_STAGES,
+    DatasetConfig,
+    ExtendedSpace,
+    PipelineStage,
+    check_stage_range,
+)
 from .data_loaders import build_sign0_inputs
 
 logger = logging.getLogger(__name__)
@@ -355,16 +361,58 @@ def fit_sign3(
     return sign3
 
 
+# Signatures each stage is fitted from; loaded from disk when that stage is the first one fitted.
+STAGE_INPUTS: dict[str, tuple[str, ...]] = {
+    "sign0": (),
+    "sign1": ("sign0",),
+    "sign2": ("sign1", "neig1"),
+    "sign3": ("sign1", "sign2"),
+}
+
+
+def load_fitted_signature(cc_instance: Any, dataset_code: str, cctype: str) -> Any:
+    """
+    Return an already fitted signature of a dataset (the 'full' molset).
+
+    Parameters
+    ----------
+    cc_instance : chemicalchecker.ChemicalChecker
+        The local CC instance.
+    dataset_code : str
+        CC dataset code.
+    cctype : str
+        Signature type, e.g. ``"sign2"`` or ``"neig1"``.
+
+    Returns
+    -------
+    chemicalchecker signature object
+
+    Raises
+    ------
+    FileNotFoundError
+        If the signature has not been fitted in this CC instance.
+    """
+    signature = cc_instance.get_signature(cctype, "full", dataset_code)
+    if not signature.available():
+        raise FileNotFoundError(
+            f"{dataset_code} {cctype} is not fitted in this CC instance "
+            f"({signature.data_path}); start from an earlier stage"
+        )
+    logger.info("[%s] loaded fitted %s", dataset_code, cctype)
+    return signature
+
+
 def run_signature_pipeline(
     cc_instance: Any,
     dataset_config: DatasetConfig,
     mapping_dict: dict[str, str] | None = None,
     cc_universe: set[str] | None = None,
     diagnosis_plots: bool = True,
-    max_stage: MaxStage = "sign3",
+    start_stage: PipelineStage = "sign0",
+    max_stage: PipelineStage = "sign3",
 ) -> dict[str, Any]:
     """
-    Fit sign0 -> sign1 (+neig1) -> sign2 -> sign3 for one dataset.
+    Fit sign0 -> sign1 (+neig1) -> sign2 -> sign3 for one dataset, from ``start_stage`` to ``max_stage``.
 
     Parameters
     ----------
@@ -377,81 +425,84 @@ def run_signature_pipeline(
     cc_universe : set of str, optional
         If given, the dataset's overlap with it is logged after sign2.
     diagnosis_plots : bool, default True
-        Save CC diagnosis canvases after each stage.
+        Save CC diagnosis canvases after each fitted stage.
+    start_stage : {"sign0", "sign1", "sign2", "sign3"}, default "sign0"
+        First signature type to fit. The signatures it is fitted from (see
+        :data:`STAGE_INPUTS`) are loaded from the CC instance instead of refitted,
+        e.g. "sign3" fits sign3 on the existing sign1 and sign2.
     max_stage : {"sign0", "sign1", "sign2", "sign3"}, default "sign3"
         Last signature type to fit (e.g. "sign2" to skip the costly sign3).
 
     Returns
     -------
     dict
-        Fitted signature objects keyed ``"sign0"``, ``"sign1"``, ``"neig1"``,
-        ``"sign2"``, ``"sign3"`` (later keys absent if stopped earlier).
+        Signature objects keyed by type (``"sign0"``, ``"sign1"``, ``"neig1"``,
+        ``"sign2"``, ``"sign3"``): the loaded inputs of ``start_stage`` followed
+        by the fitted stages.
 
     Raises
     ------
     ValueError
-        If ``max_stage`` is not one of the pipeline stages.
+        If the stages are not pipeline stages or ``start_stage`` comes after ``max_stage``.
+    FileNotFoundError
+        If a signature needed by ``start_stage`` has not been fitted yet.
     """
-    if max_stage not in PIPELINE_STAGES:
-        raise ValueError(
-            f"max_stage must be one of {PIPELINE_STAGES}, got {max_stage!r}"
-        )
+    check_stage_range(start_stage, max_stage)
     dataset_code, fit_options = dataset_config.dataset_code, dataset_config.fit
     label = f"{dataset_config.name} ({dataset_code})"
-    fitted: dict[str, Any] = {}
+    stages = PIPELINE_STAGES[
+        PIPELINE_STAGES.index(start_stage) : PIPELINE_STAGES.index(max_stage) + 1
+    ]
+    signatures: dict[str, Any] = {
+        cctype: load_fitted_signature(cc_instance, dataset_code, cctype)
+        for cctype in STAGE_INPUTS[start_stage]
+    }
 
-    fitted["sign0"] = fit_sign0(
-        cc_instance,
-        dataset_code,
-        build_sign0_inputs(dataset_config.source),
-        **fit_options.sign0,
-    )
-    report_minmax(fitted["sign0"], label=f"{label} sign0")
-    if diagnosis_plots:
-        diagnose_and_plot(fitted["sign0"])
-    if max_stage == "sign0":
-        return fitted
-
-    fitted["sign1"], fitted["neig1"] = fit_sign1(
-        cc_instance, dataset_code, fitted["sign0"], **fit_options.sign1
-    )
-    report_minmax(fitted["sign1"], label=f"{label} sign1")
-    if diagnosis_plots:
-        diagnose_and_plot(fitted["sign1"])
-    if max_stage == "sign1":
-        return fitted
-
-    fitted["sign2"] = fit_sign2(
-        cc_instance, dataset_code, fitted["sign1"], fitted["neig1"], **fit_options.sign2
-    )
-    report_minmax(fitted["sign2"], label=f"{label} sign2")
-    if diagnosis_plots:
-        diagnose_and_plot(fitted["sign2"])
-    if cc_universe is not None:
-        report_universe_overlap(label, fitted["sign2"], cc_universe)
-    if max_stage == "sign2":
-        return fitted
-
-    extends = (
-        dataset_config.reference_spaces.extends
-        if isinstance(dataset_config.reference_spaces, ExtendedSpace)
-        else None
-    )
-    reference_sign2_spaces = build_reference_sign2_spaces(
-        cc_instance, dataset_code, extends=extends
-    )
-    fitted["sign3"] = fit_sign3(
-        cc_instance,
-        dataset_code,
-        fitted["sign2"],
-        fitted["sign1"],
-        reference_sign2_spaces,
-        mapping_dict=mapping_dict,
-        **fit_options.sign3,
-    )
-    report_minmax(fitted["sign3"], label=f"{label} sign3")
-    if diagnosis_plots:
-        diagnose_and_plot(
-            fitted["sign3"], sizes=("medium", "small"), ref_cctype="sign3"
-        )
-    return fitted
+    for stage in stages:
+        if stage == "sign0":
+            signatures["sign0"] = fit_sign0(
+                cc_instance,
+                dataset_code,
+                build_sign0_inputs(dataset_config.source),
+                **fit_options.sign0,
+            )
+        elif stage == "sign1":
+            signatures["sign1"], signatures["neig1"] = fit_sign1(
+                cc_instance, dataset_code, signatures["sign0"], **fit_options.sign1
+            )
+        elif stage == "sign2":
+            signatures["sign2"] = fit_sign2(
+                cc_instance,
+                dataset_code,
+                signatures["sign1"],
+                signatures["neig1"],
+                **fit_options.sign2,
+            )
+            if cc_universe is not None:
+                report_universe_overlap(label, signatures["sign2"], cc_universe)
+        else:
+            extends = (
+                dataset_config.reference_spaces.extends
+                if isinstance(dataset_config.reference_spaces, ExtendedSpace)
+                else None
+            )
+            signatures["sign3"] = fit_sign3(
+                cc_instance,
+                dataset_code,
+                signatures["sign2"],
+                signatures["sign1"],
+                build_reference_sign2_spaces(
+                    cc_instance, dataset_code, extends=extends
+                ),
+                mapping_dict=mapping_dict,
+                **fit_options.sign3,
+            )
+        report_minmax(signatures[stage], label=f"{label} {stage}")
+        if diagnosis_plots:
+            if stage == "sign3":
+                diagnose_and_plot(
+                    signatures["sign3"], sizes=("medium", "small"), ref_cctype="sign3"
+                )
+            else:
+                diagnose_and_plot(signatures[stage])
+    return signatures
