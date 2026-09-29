@@ -12,7 +12,7 @@ os.environ["PLOTLY_RENDERER"] = "notebook"
 
 # -- Project information -----------------------------------------------------
 
-project = "chemical_checker_protocols"
+project = "chem_checker_protocols"
 copyright = "2026, SBNB"
 author = "SBNB"
 pyproject = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text())
