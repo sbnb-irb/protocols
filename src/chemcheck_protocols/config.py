@@ -169,7 +169,7 @@ class RunConfig(_ConfigModel):
         JSON file mapping InChIKey -> InChI, forwarded to ``sign3.fit`` as
         ``mapping_dict`` so it doesn't query online repositories.
     log_dir : pathlib.Path, default "logs"
-        Folder for the run's log file.
+        Folder for the run's log file (next to the configuration file by default).
     start_stage : {"sign0", "sign1", "sign2", "sign3"}, default "sign0"
         First signature type to fit; earlier ones are loaded from ``cc_root``
         (e.g. "sign3" to fit only sign3 on an already checked sign2).
@@ -187,7 +187,7 @@ class RunConfig(_ConfigModel):
     cc_config: ConfigPath | None = None
     custom_data_path: ConfigPath | None = None
     inchikey_mapping: ConfigPath | None = None
-    log_dir: ConfigPath = Path("logs")
+    log_dir: ConfigPath = Field(default=Path("logs"), validate_default=True)
     start_stage: PipelineStage = "sign0"
     max_stage: PipelineStage = "sign3"
     diagnosis_plots: bool = True

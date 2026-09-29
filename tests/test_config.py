@@ -35,6 +35,7 @@ def test_relative_paths_resolve_against_config_file_folder(tmp_path):
     config = load_run_config(config_file)
     assert config.cc_root == tmp_path / "cc"
     assert config.datasets[0].source.path == tmp_path / "raw" / "data.csv"
+    assert config.log_dir == tmp_path / "logs"  # default, also resolved
 
 
 @pytest.mark.parametrize(
