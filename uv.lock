@@ -468,7 +468,7 @@ wheels = [
 ]
 
 [[package]]
-name = "chem-checker-protocols"
+name = "chemcheck-protocols"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

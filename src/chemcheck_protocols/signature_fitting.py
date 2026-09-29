@@ -167,7 +167,7 @@ def fit_sign0(
     dataset_code : str
         CC dataset code, e.g. ``"M1.001"``.
     sign0_inputs : dict
-        Data arguments from :func:`~chem_checker_protocols.data_loaders.build_sign0_inputs`
+        Data arguments from :func:`~chemcheck_protocols.data_loaders.build_sign0_inputs`
         (``X``/``keys``/``features``, ``pairs`` or ``data_file``).
     **fit_options
         Forwarded to ``sign0.fit``, e.g. ``sanitizer_kwargs``.

@@ -1,4 +1,4 @@
-"""Allow ``python -m chem_checker_protocols``."""
+"""Allow ``python -m chemcheck_protocols``."""
 
 import sys
 

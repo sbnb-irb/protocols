@@ -3,7 +3,7 @@
 # Equivalent to notebooks/D6.001.ipynb.
 #
 # Run (inside the CC Singularity image, with src/ on PYTHONPATH):
-#   python -m chem_checker_protocols fit-signatures --config configs/paper_tasks/d6_001.yaml
+#   python -m chemcheck_protocols fit-signatures --config configs/paper_tasks/d6_001.yaml
 #
 # Relative paths are resolved against this file's folder. Data: see notebooks/Download_Data.ipynb.
 

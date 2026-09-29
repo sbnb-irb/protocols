@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from chem_checker_protocols.config import RunConfig, load_run_config
+from chemcheck_protocols.config import RunConfig, load_run_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 

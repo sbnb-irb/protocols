@@ -1,5 +1,5 @@
 [project]
-name = "chem-checker-protocols"
+name = "chemcheck-protocols"
 version = "0.1.0"
 description = "Chemical Checker protocols: fit, evaluate and compare bioactivity signature spaces."
 readme = "README.md"
@@ -35,7 +35,7 @@ dev = [
 ]
 
 [project.scripts]
-chem-checker-protocols = "chem_checker_protocols.cli:main"
+chemcheck-protocols = "chemcheck_protocols.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.8,<0.13"]

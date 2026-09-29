@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from chem_checker_protocols.config import DatasetConfig
-from chem_checker_protocols.signature_fitting import (
+from chemcheck_protocols.config import DatasetConfig
+from chemcheck_protocols.signature_fitting import (
     build_reference_sign2_spaces,
     get_cc_universe,
     run_signature_pipeline,

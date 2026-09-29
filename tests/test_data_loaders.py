@@ -3,8 +3,8 @@ import json
 import numpy as np
 import pytest
 
-from chem_checker_protocols.config import DataSource
-from chem_checker_protocols.data_loaders import (
+from chemcheck_protocols.config import DataSource
+from chemcheck_protocols.data_loaders import (
     build_sign0_inputs,
     load_inchikey_mapping,
     load_wide_matrix,

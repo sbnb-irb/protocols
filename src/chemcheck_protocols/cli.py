@@ -1,4 +1,4 @@
-"""Command-line interface: ``python -m chem_checker_protocols <command> ...``.
+"""Command-line interface: ``python -m chemcheck_protocols <command> ...``.
 
 Commands
 --------
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser with one sub-parser per command."""
     parser = argparse.ArgumentParser(
-        prog="chem_checker_protocols",
+        prog="chemcheck_protocols",
         description="Chemical Checker protocols: fit, evaluate and compare bioactivity signature spaces.",
     )
     commands = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")

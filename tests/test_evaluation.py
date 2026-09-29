@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from chem_checker_protocols.evaluation import (
+from chemcheck_protocols.evaluation import (
     cosine_nn_recapitulation_auroc,
     get_shared_vectors,
     shared_key_recapitulation,
