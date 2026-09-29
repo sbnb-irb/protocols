@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from datetime import datetime
-from pathlib import Path
-from typing import Iterator
 import logging
 import os
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +30,21 @@ def get_time(incl_time: bool = True, incl_timezone: bool = True) -> str:
     str
         A timestamp such as ``2026-07-29_16-40-56_CEST``.
     """
-    now: datetime = datetime.now()
+    now: datetime = datetime.now()  # noqa: DTZ005 -- local wall-clock time for file names
     timezone: str = now.astimezone().tzname() or ""
-    stamp = now.isoformat(sep="_", timespec="seconds") if incl_time else now.date().isoformat()
+    stamp = (
+        now.isoformat(sep="_", timespec="seconds")
+        if incl_time
+        else now.date().isoformat()
+    )
     if incl_timezone and timezone:
         stamp = f"{stamp}_{timezone}"
     return stamp.replace(":", "-")  # ':' is invalid in filenames on some systems
 
 
-def generate_log_filename(folder: str | os.PathLike[str] = "logs", suffix: str = "") -> Path:
+def generate_log_filename(
+    folder: str | os.PathLike[str] = "logs", suffix: str = ""
+) -> Path:
     """
     Creates a timestamped log-file path inside a folder, creating the folder.
 
@@ -92,13 +98,17 @@ def setup_logging(
         fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    handlers: list[logging.Handler] = [logging.FileHandler(log_path, mode=mode, encoding="utf-8")]
+    handlers: list[logging.Handler] = [
+        logging.FileHandler(log_path, mode=mode, encoding="utf-8")
+    ]
     if display:
         handlers.append(logging.StreamHandler(stream=sys.stdout))
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    for handler in root_logger.handlers[:]:  # reset so repeated runs don't stack handlers
+    for handler in root_logger.handlers[
+        :
+    ]:  # reset so repeated runs don't stack handlers
         root_logger.removeHandler(handler)
     for handler in handlers:
         handler.setFormatter(formatter)
@@ -119,16 +129,12 @@ def resume_logging_after_import(
     ``chemicalchecker.util.logging.our_logging``), which uses the stdlib
     default ``disable_existing_loggers=True``. That silently (a) sets
     ``.disabled = True`` on every logger object that already existed at that
-    point -- including this project's own module-level loggers
-    (``utils``, ``cc_pipeline``, ``pertprot_cli``/``__main__``), created via
-    ``logging.getLogger(__name__)`` well before the chemicalchecker import
-    runs -- and (b) closes and replaces the root logger's own handlers
-    outright with chemicalchecker's single stderr handler. Confirmed via a
-    standalone reproduction 2026-09-23: without this, every ``logger.info()``
-    call anywhere in this project's own code silently vanishes for the rest
-    of the process, from immediately after the chemicalchecker import
-    onward, even though chemicalchecker's own internal logging keeps working
-    fine.
+    point -- including this package's module-level loggers, created via
+    ``logging.getLogger(__name__)`` before the chemicalchecker import runs --
+    and (b) closes and replaces the root logger's own handlers outright with
+    chemicalchecker's single stderr handler. Without this, every
+    ``logger.info()`` call in this package silently vanishes for the rest of
+    the process, even though chemicalchecker's own logging keeps working.
 
     Call this once, right after importing (or otherwise first invoking
     ``ChemicalChecker.set_verbosity``/etc.) chemicalchecker, passing the
