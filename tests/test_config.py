@@ -74,3 +74,10 @@ def test_select_datasets_rejects_unknown_keys():
 def test_missing_config_file_raises(tmp_path):
     with pytest.raises(FileNotFoundError, match="Run configuration not found"):
         load_run_config(tmp_path / "absent.yaml")
+
+
+def test_invalid_yaml_names_the_file(tmp_path):
+    config_file = tmp_path / "broken.yaml"
+    config_file.write_text("datasets: [a, , b]\n")
+    with pytest.raises(ValueError, match="Invalid YAML in .*broken.yaml"):
+        load_run_config(config_file)

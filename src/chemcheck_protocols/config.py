@@ -243,6 +243,8 @@ def load_run_config(config_path: str | os.PathLike[str]) -> RunConfig:
     ------
     FileNotFoundError
         If ``config_path`` is not a file.
+    ValueError
+        If the file is not valid YAML.
     pydantic.ValidationError
         If the content does not match the schema (unknown keys, missing fields,
         malformed dataset codes, duplicates...).
@@ -251,7 +253,10 @@ def load_run_config(config_path: str | os.PathLike[str]) -> RunConfig:
     if not config_path.is_file():
         raise FileNotFoundError(f"Run configuration not found: {config_path}")
     with config_path.open(encoding="utf-8") as handle:
-        raw = yaml.safe_load(handle)
+        try:
+            raw = yaml.safe_load(handle)
+        except yaml.YAMLError as error:
+            raise ValueError(f"Invalid YAML in {config_path}: {error}") from error
     config = RunConfig.model_validate(
         raw, context={"config_dir": config_path.resolve().parent}
     )
