@@ -45,6 +45,14 @@ def test_relative_paths_resolve_against_config_file_folder(tmp_path):
         ({"dataset_code": "M1-001"}, "String should match pattern"),
         ({"source": {"format": "excel", "path": "x"}}, "Input should be"),
         ({"reference_spaces": {"extends": "B1.001"}}, "cannot extend B1.001"),
+        (
+            {"fit": {"sign3": {"triplets_sampler": "x"}}},
+            "Set the sign3 triplets with triplet_sampler",
+        ),
+        (
+            {"triplet_sampler": {"method": "jaccard"}},
+            "Input should be 'binary_jaccard'",
+        ),
     ],
 )
 def test_invalid_dataset_config_is_rejected(overrides, message):

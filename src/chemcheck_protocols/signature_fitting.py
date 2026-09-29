@@ -11,6 +11,7 @@ and described in each docstring.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -22,6 +23,7 @@ from .config import (
     DatasetConfig,
     ExtendedSpace,
     PipelineStage,
+    TripletSamplerConfig,
     check_stage_range,
 )
 from .data_loaders import build_sign0_inputs
@@ -325,6 +327,7 @@ def fit_sign3(
     reference_sign2_spaces: list[Any],
     mapping_dict: dict[str, str] | None = None,
     complete_universe: str | bool = "fast",
+    triplet_signature: Any | None = None,
     **fit_options: Any,
 ) -> Any:
     """
@@ -344,6 +347,9 @@ def fit_sign3(
         InChIKey -> InChI mapping, so chemicalchecker doesn't query online repositories.
     complete_universe : {"fast", "full", False}, default "fast"
         Forwarded to ``sign3.fit``; "fast" as in the paper (skips A2 3D conformers).
+    triplet_signature : chemicalchecker signature object, optional
+        Signature defining the training triplets; ``sign1`` when omitted
+        (chemicalchecker's default).
     **fit_options
         Other arguments forwarded to ``sign3.fit``, e.g. ``triplets_sampler``.
 
@@ -366,13 +372,46 @@ def fit_sign3(
     sign3.fit(
         reference_sign2_spaces,
         sign2,
-        sign1,
+        sign1 if triplet_signature is None else triplet_signature,
         complete_universe=complete_universe,
         dbconnect=False,
         mapping_dict=mapping_dict,
         **fit_options,
     )
     return sign3
+
+
+# Config names of the triplet samplers -> classes in chemicalchecker.util.splitter.
+TRIPLET_SAMPLERS = {"binary_jaccard": "BinaryJaccardTripletSampler"}
+
+
+def resolve_triplet_sampler(sampler_config: TripletSamplerConfig) -> list[Any]:
+    """
+    Build the ``triplets_sampler`` argument of ``sign3.fit`` from the configuration.
+
+    Parameters
+    ----------
+    sampler_config : TripletSamplerConfig
+        Sampler method and options.
+
+    Returns
+    -------
+    list
+        ``[sampler_class, None, options]``; None lets sign3 pass its own inputs.
+
+    Raises
+    ------
+    ImportError
+        If the installed chemicalchecker does not provide the sampler.
+    """
+    class_name = TRIPLET_SAMPLERS[sampler_config.method]
+    splitter = importlib.import_module("chemicalchecker.util.splitter")
+    if not hasattr(splitter, class_name):
+        raise ImportError(
+            f"chemicalchecker at {splitter.__file__} has no {class_name}; "
+            "use a CC version that includes it (branch custom-triplet-sampler)"
+        )
+    return [getattr(splitter, class_name), None, dict(sampler_config.options)]
 
 
 # Signatures each stage is fitted from; loaded from disk when that stage is the first one fitted.
@@ -500,6 +539,26 @@ def run_signature_pipeline(
                 if isinstance(dataset_config.reference_spaces, ExtendedSpace)
                 else None
             )
+            sampler_config = dataset_config.triplet_sampler
+            sampler_options: dict[str, Any] = {}
+            if sampler_config is not None:
+                cctype = sampler_config.triplet_signature
+                triplet_signature = signatures.get(cctype)
+                if triplet_signature is None:
+                    triplet_signature = load_fitted_signature(
+                        cc_instance, dataset_code, cctype
+                    )
+                sampler_options = {
+                    "triplet_signature": triplet_signature,
+                    "triplets_sampler": resolve_triplet_sampler(sampler_config),
+                }
+                logger.info(
+                    "[%s] sign3 triplets: %s on %s, options %s",
+                    dataset_code,
+                    sampler_config.method,
+                    cctype,
+                    sampler_config.options,
+                )
             signatures["sign3"] = fit_sign3(
                 cc_instance,
                 dataset_code,
@@ -509,6 +568,7 @@ def run_signature_pipeline(
                     cc_instance, dataset_code, extends=extends
                 ),
                 mapping_dict=mapping_dict,
+                **sampler_options,
                 **fit_options.sign3,
             )
         report_minmax(signatures[stage], label=f"{label} {stage}")

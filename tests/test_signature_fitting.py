@@ -1,10 +1,14 @@
+import sys
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
-from chemcheck_protocols.config import DatasetConfig
+from chemcheck_protocols.config import DatasetConfig, TripletSamplerConfig
 from chemcheck_protocols.signature_fitting import (
     build_reference_sign2_spaces,
     get_cc_universe,
+    resolve_triplet_sampler,
     run_signature_pipeline,
 )
 
@@ -156,3 +160,48 @@ def test_start_stage_after_max_stage_is_rejected(tmp_path):
         run_signature_pipeline(
             FakeCC(), dataset_config(tmp_path), start_stage="sign3", max_stage="sign2"
         )
+
+
+class FakeSampler:
+    pass
+
+
+@pytest.fixture
+def splitter_module(monkeypatch):
+    """Stand-in for chemicalchecker.util.splitter providing the custom sampler."""
+    module = SimpleNamespace(BinaryJaccardTripletSampler=FakeSampler, __file__="fake")
+    monkeypatch.setitem(sys.modules, "chemicalchecker.util.splitter", module)
+    return module
+
+
+def test_configured_sampler_and_triplet_signature_reach_sign3(
+    tmp_path, splitter_module
+):
+    config = dataset_config(
+        tmp_path,
+        triplet_sampler={"method": "binary_jaccard", "options": {"seed": 0}},
+    )
+    result = run_signature_pipeline(
+        FakeCC(), config, diagnosis_plots=False, start_stage="sign3"
+    )
+    (_, sign2, triplet_signature), kwargs = result["sign3"].fit_calls[0]
+    assert triplet_signature.cctype == "sign0"
+    assert sign2 is result["sign2"]
+    assert kwargs["triplets_sampler"] == [FakeSampler, None, {"seed": 0}]
+
+
+def test_default_triplets_use_sign1(tmp_path):
+    result = run_signature_pipeline(
+        FakeCC(), dataset_config(tmp_path), diagnosis_plots=False, start_stage="sign3"
+    )
+    (_, _, triplet_signature), kwargs = result["sign3"].fit_calls[0]
+    assert triplet_signature is result["sign1"]
+    assert "triplets_sampler" not in kwargs
+
+
+def test_sampler_missing_from_chemicalchecker_is_reported(monkeypatch):
+    monkeypatch.setitem(
+        sys.modules, "chemicalchecker.util.splitter", SimpleNamespace(__file__="old")
+    )
+    with pytest.raises(ImportError, match="has no BinaryJaccardTripletSampler"):
+        resolve_triplet_sampler(TripletSamplerConfig(method="binary_jaccard"))

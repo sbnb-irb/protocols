@@ -104,6 +104,27 @@ class FitOptions(_ConfigModel):
     sign3: dict[str, Any] = Field(default_factory=dict)
 
 
+class TripletSamplerConfig(_ConfigModel):
+    """
+    A non-default sampler for the triplets sign3 is trained on.
+
+    Parameters
+    ----------
+    method : {"binary_jaccard"}
+        ``binary_jaccard``: chemicalchecker's ``BinaryJaccardTripletSampler``,
+        positives from the Jaccard similarity of binary profiles.
+    triplet_signature : {"sign0", "sign1"}, default "sign0"
+        This dataset's signature that defines similar molecules; must be binary
+        for ``binary_jaccard``.
+    options : dict
+        Forwarded to the sampler's ``generate_triplets``, e.g. ``{seed: 0}``.
+    """
+
+    method: Literal["binary_jaccard"]
+    triplet_signature: Literal["sign0", "sign1"] = "sign0"
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 class ExtendedSpace(_ConfigModel):
     """The existing CC space a dataset extends (its sign2 replaces that space's in sign3 training)."""
 
@@ -130,6 +151,9 @@ class DatasetConfig(_ConfigModel):
         Which sign2 spaces train sign3: the 25 exemplary CC spaces plus this
         one (``new_space``, paper Tasks 3-4), or the 25 with the extended
         space swapped for this one (``{extends: B1.001}``, paper Tasks 1-2).
+    triplet_sampler : TripletSamplerConfig, optional
+        Sampler for sign3's training triplets; chemicalchecker's default
+        (neighbours in sign1) when omitted.
     """
 
     key: str = Field(min_length=1)
@@ -138,6 +162,16 @@ class DatasetConfig(_ConfigModel):
     source: DataSource
     fit: FitOptions = Field(default_factory=FitOptions)
     reference_spaces: Literal["new_space"] | ExtendedSpace = "new_space"
+    triplet_sampler: TripletSamplerConfig | None = None
+
+    @model_validator(mode="after")
+    def _triplets_set_in_one_place(self) -> DatasetConfig:
+        conflicting = sorted({"triplets_sampler", "triplet_sign"} & set(self.fit.sign3))
+        if conflicting:
+            raise ValueError(
+                f"Set the sign3 triplets with triplet_sampler, not fit.sign3 {conflicting}"
+            )
+        return self
 
     @model_validator(mode="after")
     def _extension_matches_coordinate(self) -> DatasetConfig:
