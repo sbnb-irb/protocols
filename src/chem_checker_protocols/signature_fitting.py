@@ -1,283 +1,331 @@
-"""Fitting of Chemical Checker signatures sign0 -> sign1/neig1 -> sign2 -> sign3 for one dataset."""
+"""Fitting of Chemical Checker signatures sign0 -> sign1/neig1 -> sign2 -> sign3 for one dataset.
+
+Each ``fit_signN`` function is a thin wrapper around the chemicalchecker
+``fit()`` of that signature type (it clears previous results first), and
+:func:`run_signature_pipeline` chains them for one dataset as in the paper's
+Procedure (Comajuncosa-Creus et al., Nat. Protoc. 2025).
+
+chemicalchecker objects ship no type stubs, so they are annotated as ``Any``
+and described in each docstring.
+"""
 
 from __future__ import annotations
 
-from typing import Any, Sequence
 import logging
-import numpy as np
-import pandas as pd
+from collections.abc import Sequence
+from typing import Any
 
-from .config import DatasetSpec
+import numpy as np
+
+from .config import PIPELINE_STAGES, DatasetConfig, ExtendedSpace, MaxStage
+from .data_loaders import build_sign0_inputs
 
 logger = logging.getLogger(__name__)
 
 
-PIPELINE_STAGES: tuple[str, ...] = ("sign0", "sign1", "sign2", "sign3")
-
-
-def report_minmax(sign_obj: Any, label: str | None = None) -> tuple[float, float]:
+def report_minmax(signature: Any, label: str | None = None) -> tuple[float, float]:
     """
-    Log and return the (min, max) of a signature's underlying array.
-
-    Replaces the repeated ``np.min(np.array(sign).flatten()), np.max(...)``
-    line that followed every fit in the original script.
+    Log and return the (min, max) of a signature's matrix.
 
     Parameters
     ----------
-    sign_obj : chemicalchecker signature object
-        Any fitted sign0/sign1/sign2/sign3 object; must support ``np.array()``.
+    signature : chemicalchecker signature object
+        Any fitted sign0/sign1/sign2/sign3; must support ``np.array()``.
     label : str, optional
-        Prefix used in the log message, e.g. ``"DeepCoverMoa sign2"``.
+        Prefix used in the log message, e.g. ``"M1.001 sign2"``.
 
     Returns
     -------
     tuple of float
-        ``(min, max)`` of the flattened array.
+        ``(min, max)`` of the flattened matrix.
     """
-    arr = np.array(sign_obj)
-    vmin, vmax = np.min(arr), np.max(arr)
-    logger.info("%sshape=%s min=%s max=%s", f"[{label}] " if label else "", arr.shape, vmin, vmax)
-    return vmin, vmax
+    matrix = np.array(signature)
+    value_min, value_max = np.min(matrix), np.max(matrix)
+    logger.info(
+        "%sshape=%s min=%s max=%s",
+        f"[{label}] " if label else "",
+        matrix.shape,
+        value_min,
+        value_max,
+    )
+    return value_min, value_max
 
 
 def diagnose_and_plot(
-    sign_obj: Any,
+    signature: Any,
     sizes: Sequence[str] = ("small",),
     ref_cctype: str | None = None,
     dpi: int = 300,
 ) -> Any:
     """
-    Run ``.diagnosis()`` then ``.canvas()`` for one or more plot sizes.
-
-    Replaces the repeated
-    ``diagN.canvas(size=..., savefig=True, savefig_kwargs={'dpi': 300})``
-    block that followed every fit in the original script.
+    Run the CC diagnosis of a signature and save its canvas at one or more sizes.
 
     Parameters
     ----------
-    sign_obj : chemicalchecker signature object
+    signature : chemicalchecker signature object
         The signature to diagnose.
     sizes : sequence of str, default ("small",)
         Canvas sizes to plot and save, e.g. ``("medium", "small")``.
     ref_cctype : str, optional
-        Reference signature type forwarded to ``.diagnosis()`` (used for
-        sign3, which diagnoses against ``ref_cctype='sign3'``).
+        Reference signature type forwarded to ``.diagnosis()`` (sign3 is
+        diagnosed against ``ref_cctype="sign3"``).
     dpi : int, default 300
         Resolution used when saving each canvas.
 
     Returns
     -------
     chemicalchecker diagnosis object
-        The object returned by ``sign_obj.diagnosis()``.
+        The object returned by ``signature.diagnosis()``.
     """
-    diag_kwargs = {} if ref_cctype is None else {"ref_cctype": ref_cctype}
-    diag = sign_obj.diagnosis(**diag_kwargs)
+    diagnosis_kwargs = {} if ref_cctype is None else {"ref_cctype": ref_cctype}
+    diagnosis = signature.diagnosis(**diagnosis_kwargs)
     for size in sizes:
-        diag.canvas(size=size, savefig=True, savefig_kwargs={"dpi": dpi})
-    return diag
+        diagnosis.canvas(size=size, savefig=True, savefig_kwargs={"dpi": dpi})
+    return diagnosis
 
 
-def get_cc_universe(cc_local: Any, exclude_code: str = "D6.001") -> set:
+def get_cc_universe(cc_instance: Any) -> set[str]:
     """
-    Compute the union of molecule keys across the canonical CC sign2 spaces.
+    Union of the InChIKeys in the sign2 of the 25 exemplary CC spaces.
 
-    This is dataset-independent, so it should be computed ONCE per run and
-    reused for every PerturbProt dataset (the original script re-derived the
-    equivalent set inline for each dataset separately).
+    Uses ``ChemicalChecker.datasets_exemplary()`` rather than
+    ``ChemicalChecker.universe``, which queries the CC database and does not
+    work in local instances opened with ``dbconnect=False``. Compute it once
+    per run and reuse it for every dataset.
 
     Parameters
     ----------
-    cc_local : chemicalchecker.ChemicalChecker
-        The local Chemical Checker instance.
-    exclude_code : str, default "D6.001"
-        Dataset code to exclude from the universe (the PerturbProt reference
-        space itself).
+    cc_instance : chemicalchecker.ChemicalChecker
+        The local CC instance.
 
     Returns
     -------
-    set
-        Molecule keys present in any canonical (``*.001``) CC sign2 'full' space.
+    set of str
+        InChIKeys present in any exemplary sign2 space. Spaces whose sign2 is
+        missing are skipped with a warning.
     """
-    universe: list = []
-    for dat in cc_local.datasets:
-        if dat.endswith("001") and dat != exclude_code:
-            universe.extend(cc_local.get_signature("sign2", "full", dat).keys)
-    universe = set(universe)
+    universe: set[str] = set()
+    for dataset_code in cc_instance.datasets_exemplary():
+        sign2 = cc_instance.get_signature("sign2", "full", dataset_code)
+        if not sign2.available():
+            logger.warning(
+                "No sign2 for exemplary space %s; left out of the CC universe",
+                dataset_code,
+            )
+            continue
+        universe.update(sign2.keys)
     logger.info("Number of molecules in the CC universe: %d", len(universe))
     return universe
 
 
-def report_universe_overlap(name: str, sign2_obj: Any, cc_universe: set) -> set:
+def report_universe_overlap(
+    dataset_name: str, sign2: Any, cc_universe: set[str]
+) -> set[str]:
     """
-    Log molecule-count and CC-universe overlap for one dataset's sign2.
+    Log how many of a dataset's sign2 molecules are already in the CC universe.
+
+    Poor overlap makes sign3 unreliable (paper Procedure step 20).
 
     Parameters
     ----------
-    name : str
-        Display name of the dataset, used in the log message.
-    sign2_obj : chemicalchecker signature object
+    dataset_name : str
+        Display name used in the log message.
+    sign2 : chemicalchecker signature object
         The dataset's fitted sign2.
-    cc_universe : set
-        Molecule keys from :func:`get_cc_universe`.
+    cc_universe : set of str
+        InChIKeys from :func:`get_cc_universe`.
 
     Returns
     -------
-    set
-        Molecule keys present in ``sign2_obj``.
+    set of str
+        InChIKeys present in ``sign2``.
     """
-    d6_molecules = set(sign2_obj.keys)
-    overlap = len(cc_universe.intersection(d6_molecules))
+    dataset_inchikeys = set(sign2.keys)
+    overlap = len(cc_universe & dataset_inchikeys)
     logger.info(
-        "[%s] molecules in D6 sign2: %d | intersection with CC universe: %d",
-        name, len(d6_molecules), overlap,
+        "[%s] molecules in sign2: %d | intersection with CC universe: %d",
+        dataset_name,
+        len(dataset_inchikeys),
+        overlap,
     )
-    return d6_molecules
+    return dataset_inchikeys
 
 
 def fit_sign0(
-    cc_local: Any, code: str, df: pd.DataFrame, sanitizer_kwargs: dict[str, Any] | None = None
+    cc_instance: Any,
+    dataset_code: str,
+    sign0_inputs: dict[str, Any],
+    **fit_options: Any,
 ) -> Any:
     """
-    Instantiate, clear and fit a sign0 from a wide compound x feature dataframe.
+    Clear and fit a dataset's sign0.
 
     Parameters
     ----------
-    cc_local : chemicalchecker.ChemicalChecker
-        The local Chemical Checker instance.
-    code : str
-        D6 dataset code, e.g. "D6.002".
-    df : pd.DataFrame
-        Wide dataframe: rows are compounds (InChIKey index), columns are
-        UniProt ids.
-    sanitizer_kwargs : dict, optional
-        Forwarded to ``sign0.fit()``, e.g. ``{"chunk_size": 500_000}``.
+    cc_instance : chemicalchecker.ChemicalChecker
+        The local CC instance.
+    dataset_code : str
+        CC dataset code, e.g. ``"M1.001"``.
+    sign0_inputs : dict
+        Data arguments from :func:`~chem_checker_protocols.data_loaders.build_sign0_inputs`
+        (``X``/``keys``/``features``, ``pairs`` or ``data_file``).
+    **fit_options
+        Forwarded to ``sign0.fit``, e.g. ``sanitizer_kwargs``.
 
     Returns
     -------
     chemicalchecker signature object
         The fitted sign0.
     """
-    sign0 = cc_local.signature(code, "sign0")
-    sign0.clear_all()  # cleaning both full and reference datasets -- crucial!
-    sign0.fit(
-        X=df.values,
-        keys=list(df.index),
-        features=list(df.columns),
-        sanitizer_kwargs=sanitizer_kwargs or {},
-    )
+    sign0 = cc_instance.signature(dataset_code, "sign0")
+    sign0.clear_all()  # clears both the full and the reference molsets
+    sign0.fit(**sign0_inputs, **fit_options)
     return sign0
 
 
-def fit_sign1(cc_local: Any, code: str, sign0: Any) -> tuple[Any, Any]:
+def fit_sign1(
+    cc_instance: Any, dataset_code: str, sign0: Any, **fit_options: Any
+) -> tuple[Any, Any]:
     """
-    Instantiate, clear and fit sign1 from sign0, plus the paired neig1.
+    Clear and fit a dataset's sign1, plus the neig1 that sign2 is built from.
 
     Parameters
     ----------
-    cc_local : chemicalchecker.ChemicalChecker
-        The local Chemical Checker instance.
-    code : str
-        D6 dataset code.
+    cc_instance : chemicalchecker.ChemicalChecker
+        The local CC instance.
+    dataset_code : str
+        CC dataset code.
     sign0 : chemicalchecker signature object
         The dataset's fitted sign0.
+    **fit_options
+        Forwarded to ``sign1.fit``, e.g. ``scale_kwargs`` or ``pca_kwargs``.
 
     Returns
     -------
     tuple of (sign1, neig1)
-        The fitted sign1 and its paired neig1.
+        The fitted sign1 and its nearest-neighbour signature.
     """
-    sign1 = cc_local.signature(code, "sign1")
+    sign1 = cc_instance.signature(dataset_code, "sign1")
     sign1.clear_all()
-    sign1.fit(sign0)
+    sign1.fit(sign0, **fit_options)
 
-    neig1 = cc_local.get_signature("neig1", "full", code)  # takes the reference anyway
+    neig1 = cc_instance.get_signature(
+        "neig1", "full", dataset_code
+    )  # fits on the reference molset
     neig1.clear_all()
     neig1.fit(sign1)
-
     return sign1, neig1
 
 
-def fit_sign2(cc_local: Any, code: str, sign1: Any, neig1: Any, oos_predictor: bool = False) -> Any:
+def fit_sign2(
+    cc_instance: Any,
+    dataset_code: str,
+    sign1: Any,
+    neig1: Any,
+    oos_predictor: bool = False,
+    **fit_options: Any,
+) -> Any:
     """
-    Instantiate, clear and fit sign2 from sign1 + neig1.
+    Clear and fit a dataset's sign2 from its sign1 and neig1.
 
     Parameters
     ----------
-    cc_local : chemicalchecker.ChemicalChecker
-        The local Chemical Checker instance.
-    code : str
-        D6 dataset code.
-    sign1 : chemicalchecker signature object
-        The dataset's fitted sign1.
-    neig1 : chemicalchecker signature object
-        The dataset's fitted neig1.
+    cc_instance : chemicalchecker.ChemicalChecker
+        The local CC instance.
+    dataset_code : str
+        CC dataset code.
+    sign1, neig1 : chemicalchecker signature objects
+        The dataset's fitted sign1 and neig1.
     oos_predictor : bool, default False
-        Forwarded to ``sign2.fit()``.
+        Forwarded to ``sign2.fit``; False as in the paper's notebooks.
+    **fit_options
+        Other arguments forwarded to ``sign2.fit``.
 
     Returns
     -------
     chemicalchecker signature object
         The fitted sign2.
     """
-    sign2 = cc_local.signature(code, "sign2")
+    sign2 = cc_instance.signature(dataset_code, "sign2")
     sign2.clear_all()
-    sign2.fit(sign1, neig1, oos_predictor=oos_predictor)
+    sign2.fit(sign1, neig1, oos_predictor=oos_predictor, **fit_options)
     return sign2
 
 
-def build_sign3_sign2_list(cc_local: Any, code: str) -> list[Any]:
+def build_reference_sign2_spaces(
+    cc_instance: Any, dataset_code: str, extends: str | None = None
+) -> list[Any]:
     """
-    Build the list of sign2 spaces that feed sign3.
+    List the sign2 spaces that train the dataset's sign3.
+
+    Starts from the 25 exemplary spaces (``ChemicalChecker.datasets_exemplary``).
+    A new space is appended (paper Tasks 3-4: 26 spaces); a dataset that
+    extends an existing space replaces it (Tasks 1-2: 25 spaces).
 
     Parameters
     ----------
-    cc_local : chemicalchecker.ChemicalChecker
-        The local Chemical Checker instance.
-    code : str
-        D6 dataset code whose own sign2 'full' is appended last.
+    cc_instance : chemicalchecker.ChemicalChecker
+        The local CC instance.
+    dataset_code : str
+        The dataset being signaturized.
+    extends : str, optional
+        Code of the exemplary space this dataset extends, e.g. ``"B1.001"``.
 
     Returns
     -------
     list
-        The canonical CC sign2 'full' spaces (one per ``cc_local.coordinates``
-        entry, i.e. the ~25 canonical spaces) plus this dataset's own sign2
-        'full' -- 26 spaces total.
+        sign2 'full' signature objects, in exemplary order.
+
+    Raises
+    ------
+    ValueError
+        If ``extends`` is not an exemplary space.
     """
-    sign2_list = []
-    for ds in cc_local.coordinates:
-        ds_code = ds + ".001"
-        sign2_list.append(cc_local.get_signature("sign2", "full", ds_code))
-    sign2_list.append(cc_local.get_signature("sign2", "full", code))
-    return sign2_list
+    exemplary_codes = list(cc_instance.datasets_exemplary())
+    if extends is None:
+        reference_codes = [*exemplary_codes, dataset_code]
+    elif extends in exemplary_codes:
+        reference_codes = [
+            dataset_code if code == extends else code for code in exemplary_codes
+        ]
+    else:
+        raise ValueError(
+            f"{extends} is not an exemplary CC space; choose one of {exemplary_codes}"
+        )
+    return [
+        cc_instance.get_signature("sign2", "full", code) for code in reference_codes
+    ]
 
 
 def fit_sign3(
-    cc_local: Any,
-    code: str,
+    cc_instance: Any,
+    dataset_code: str,
     sign2: Any,
     sign1: Any,
+    reference_sign2_spaces: list[Any],
     mapping_dict: dict[str, str] | None = None,
-    sign2_universe: Any = None,
-    complete_universe: str = "fast",
-    sign2_coverage: Any = None,
+    complete_universe: str | bool = "fast",
+    **fit_options: Any,
 ) -> Any:
     """
-    Instantiate, clear and fit sign3 given sign2 + sign1, and the 26-space sign2 list.
+    Clear and fit a dataset's sign3 (Siamese network over the reference sign2 spaces).
 
     Parameters
     ----------
-    cc_local : chemicalchecker.ChemicalChecker
-        The local Chemical Checker instance.
-    code : str
-        D6 dataset code.
-    sign2 : chemicalchecker signature object
-        The dataset's fitted sign2.
-    sign1 : chemicalchecker signature object
-        The dataset's fitted sign1.
+    cc_instance : chemicalchecker.ChemicalChecker
+        The local CC instance.
+    dataset_code : str
+        CC dataset code.
+    sign2, sign1 : chemicalchecker signature objects
+        The dataset's fitted sign2 and sign1 (sign1 defines the triplets).
+    reference_sign2_spaces : list
+        From :func:`build_reference_sign2_spaces`.
     mapping_dict : dict, optional
-        In-house InChIKey -> InChI mapping, forwarded to ``sign3.fit()``.
-    sign2_universe, complete_universe, sign2_coverage
-        Forwarded to ``sign3.fit()`` unchanged; see chemicalchecker docs.
+        InChIKey -> InChI mapping, so chemicalchecker doesn't query online repositories.
+    complete_universe : {"fast", "full", False}, default "fast"
+        Forwarded to ``sign3.fit``; "fast" as in the paper (skips A2 3D conformers).
+    **fit_options
+        Other arguments forwarded to ``sign3.fit``, e.g. ``triplets_sampler``.
 
     Returns
     -------
@@ -286,106 +334,124 @@ def fit_sign3(
 
     Notes
     -----
-    CAUTION: computationally demanding step -- normally run on an HPC cluster.
+    Computationally demanding (hours); normally run as a cluster job.
     """
-    sign3 = cc_local.signature(code, "sign3")
-
-    sign2_list = build_sign3_sign2_list(cc_local, code)
-    logger.info("[%s] number of sign2 spaces feeding sign3: %d", code, len(sign2_list))
-
+    sign3 = cc_instance.signature(dataset_code, "sign3")
+    logger.info(
+        "[%s] number of sign2 spaces training sign3: %d",
+        dataset_code,
+        len(reference_sign2_spaces),
+    )
     sign3.clear_all()
     sign3.fit(
-        sign2_list, sign2, sign1,
-        sign2_universe=sign2_universe,
+        reference_sign2_spaces,
+        sign2,
+        sign1,
         complete_universe=complete_universe,
-        sign2_coverage=sign2_coverage,
         dbconnect=False,
         mapping_dict=mapping_dict,
+        **fit_options,
     )
     return sign3
 
 
-def run_full_pipeline(
-    cc_local: Any,
-    spec: DatasetSpec,
-    sanitizer_kwargs: dict[str, Any] | None = None,
+def run_signature_pipeline(
+    cc_instance: Any,
+    dataset_config: DatasetConfig,
     mapping_dict: dict[str, str] | None = None,
-    cc_universe: set | None = None,
-    plot: bool = True,
-    max_stage: str = "sign3",
+    cc_universe: set[str] | None = None,
+    diagnosis_plots: bool = True,
+    max_stage: MaxStage = "sign3",
 ) -> dict[str, Any]:
     """
-    Run sign0 -> sign1(+neig1) -> sign2 -> sign3 for one dataset spec.
+    Fit sign0 -> sign1 (+neig1) -> sign2 -> sign3 for one dataset.
 
     Parameters
     ----------
-    cc_local : chemicalchecker.ChemicalChecker
-        The local Chemical Checker instance.
-    spec : DatasetSpec
-        The dataset to process (``spec.df`` must already be loaded).
-    sanitizer_kwargs : dict, optional
-        Forwarded to :func:`fit_sign0`.
+    cc_instance : chemicalchecker.ChemicalChecker
+        The local CC instance.
+    dataset_config : DatasetConfig
+        The dataset, its data source and per-stage fit options.
     mapping_dict : dict, optional
         Forwarded to :func:`fit_sign3`.
-    cc_universe : set, optional
-        If given, logs this dataset's overlap with the CC universe (see
-        :func:`get_cc_universe`) before fitting sign3. Ignored unless
-        ``max_stage`` reaches at least ``"sign2"``.
-    plot : bool, default True
-        Whether to run diagnosis/canvas plotting after every stage.
+    cc_universe : set of str, optional
+        If given, the dataset's overlap with it is logged after sign2.
+    diagnosis_plots : bool, default True
+        Save CC diagnosis canvases after each stage.
     max_stage : {"sign0", "sign1", "sign2", "sign3"}, default "sign3"
-        Last stage to fit (inclusive), per :data:`PIPELINE_STAGES`. Use
-        ``"sign2"`` to skip the computationally demanding sign3 step, e.g.
-        for a preliminary run.
+        Last signature type to fit (e.g. "sign2" to skip the costly sign3).
 
     Returns
     -------
     dict
-        Every fitted signature object reached before/at ``max_stage``, keyed
-        by stage name: ``'sign0'``, ``'sign1'``, ``'neig1'``, ``'sign2'``,
-        ``'sign3'`` (later keys absent if the pipeline stopped early).
+        Fitted signature objects keyed ``"sign0"``, ``"sign1"``, ``"neig1"``,
+        ``"sign2"``, ``"sign3"`` (later keys absent if stopped earlier).
 
     Raises
     ------
     ValueError
-        If ``max_stage`` is not one of :data:`PIPELINE_STAGES`.
+        If ``max_stage`` is not one of the pipeline stages.
     """
     if max_stage not in PIPELINE_STAGES:
-        raise ValueError(f"max_stage must be one of {PIPELINE_STAGES}, got {max_stage!r}")
+        raise ValueError(
+            f"max_stage must be one of {PIPELINE_STAGES}, got {max_stage!r}"
+        )
+    dataset_code, fit_options = dataset_config.dataset_code, dataset_config.fit
+    label = f"{dataset_config.name} ({dataset_code})"
+    fitted: dict[str, Any] = {}
 
-    results: dict[str, Any] = {}
-
-    sign0 = fit_sign0(cc_local, spec.code, spec.df, sanitizer_kwargs)
-    if plot:
-        diagnose_and_plot(sign0)
-    report_minmax(sign0, label=f"{spec.name} sign0")
-    results["sign0"] = sign0
+    fitted["sign0"] = fit_sign0(
+        cc_instance,
+        dataset_code,
+        build_sign0_inputs(dataset_config.source),
+        **fit_options.sign0,
+    )
+    report_minmax(fitted["sign0"], label=f"{label} sign0")
+    if diagnosis_plots:
+        diagnose_and_plot(fitted["sign0"])
     if max_stage == "sign0":
-        return results
+        return fitted
 
-    sign1, neig1 = fit_sign1(cc_local, spec.code, sign0)
-    if plot:
-        diagnose_and_plot(sign1)
-    report_minmax(sign1, label=f"{spec.name} sign1")
-    results["sign1"], results["neig1"] = sign1, neig1
+    fitted["sign1"], fitted["neig1"] = fit_sign1(
+        cc_instance, dataset_code, fitted["sign0"], **fit_options.sign1
+    )
+    report_minmax(fitted["sign1"], label=f"{label} sign1")
+    if diagnosis_plots:
+        diagnose_and_plot(fitted["sign1"])
     if max_stage == "sign1":
-        return results
+        return fitted
 
-    sign2 = fit_sign2(cc_local, spec.code, sign1, neig1)
-    if plot:
-        diagnose_and_plot(sign2)
-    report_minmax(sign2, label=f"{spec.name} sign2")
-    results["sign2"] = sign2
-
+    fitted["sign2"] = fit_sign2(
+        cc_instance, dataset_code, fitted["sign1"], fitted["neig1"], **fit_options.sign2
+    )
+    report_minmax(fitted["sign2"], label=f"{label} sign2")
+    if diagnosis_plots:
+        diagnose_and_plot(fitted["sign2"])
     if cc_universe is not None:
-        report_universe_overlap(spec.name, sign2, cc_universe)
+        report_universe_overlap(label, fitted["sign2"], cc_universe)
     if max_stage == "sign2":
-        return results
+        return fitted
 
-    sign3 = fit_sign3(cc_local, spec.code, sign2, sign1, mapping_dict=mapping_dict)
-    if plot:
-        diagnose_and_plot(sign3, sizes=("medium", "small"), ref_cctype="sign3")
-    report_minmax(sign3, label=f"{spec.name} sign3")
-    results["sign3"] = sign3
-
-    return results
+    extends = (
+        dataset_config.reference_spaces.extends
+        if isinstance(dataset_config.reference_spaces, ExtendedSpace)
+        else None
+    )
+    reference_sign2_spaces = build_reference_sign2_spaces(
+        cc_instance, dataset_code, extends=extends
+    )
+    fitted["sign3"] = fit_sign3(
+        cc_instance,
+        dataset_code,
+        fitted["sign2"],
+        fitted["sign1"],
+        reference_sign2_spaces,
+        mapping_dict=mapping_dict,
+        **fit_options.sign3,
+    )
+    report_minmax(fitted["sign3"], label=f"{label} sign3")
+    if diagnosis_plots:
+        diagnose_and_plot(
+            fitted["sign3"], sizes=("medium", "small"), ref_cctype="sign3"
+        )
+    return fitted
