@@ -31,6 +31,10 @@ class FakeSignature:
     def available(self):
         return self._available
 
+    def diagnosis(self, **kwargs):
+        # chemicalchecker raises a bare Exception for missing data files
+        raise Exception("Data file A1.001/sign1/sign1.h5 not available.")  # noqa: TRY002
+
     def __array__(self, dtype=None, copy=None):
         return np.zeros((2, 2))
 
@@ -217,3 +221,12 @@ def test_holdout_keys_file_reaches_sign0(tmp_path):
     )
     _, sign0_kwargs = result["sign0"].fit_calls[0]
     assert sign0_kwargs["keys"] == ["BBBB-X"]
+
+
+def test_failed_diagnosis_plot_does_not_stop_the_pipeline(tmp_path, caplog):
+    result = run_signature_pipeline(
+        FakeCC(), dataset_config(tmp_path), diagnosis_plots=True, max_stage="sign1"
+    )
+    assert list(result) == ["sign0", "sign1", "neig1"]
+    assert "sign0] fitted and saved, but its diagnosis plots failed" in caplog.text
+    assert "diagnosis plots failed for ['sign0', 'sign1']" in caplog.text

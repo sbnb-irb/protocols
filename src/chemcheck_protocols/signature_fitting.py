@@ -478,7 +478,8 @@ def run_signature_pipeline(
     cc_universe : set of str, optional
         If given, the dataset's overlap with it is logged after sign2.
     diagnosis_plots : bool, default True
-        Save CC diagnosis canvases after each fitted stage.
+        Save CC diagnosis canvases after each fitted stage. A failed canvas is
+        logged with its traceback and does not stop the pipeline.
     start_stage : {"sign0", "sign1", "sign2", "sign3"}, default "sign0"
         First signature type to fit. The signatures it is fitted from (see
         :data:`STAGE_INPUTS`) are loaded from the CC instance instead of refitted,
@@ -511,6 +512,7 @@ def run_signature_pipeline(
         for cctype in STAGE_INPUTS[start_stage]
     }
 
+    failed_diagnoses: list[str] = []
     for stage in stages:
         if stage == "sign0":
             holdout_keys = (
@@ -578,10 +580,27 @@ def run_signature_pipeline(
             )
         report_minmax(signatures[stage], label=f"{label} {stage}")
         if diagnosis_plots:
-            if stage == "sign3":
-                diagnose_and_plot(
-                    signatures["sign3"], sizes=("medium", "small"), ref_cctype="sign3"
+            plot_kwargs = (
+                {"sizes": ("medium", "small"), "ref_cctype": "sign3"}
+                if stage == "sign3"
+                else {}
+            )
+            # chemicalchecker raises bare Exception (e.g. a reference file missing
+            # from custom_data_path); a failed plot must not discard a finished fit.
+            try:
+                diagnose_and_plot(signatures[stage], **plot_kwargs)
+            except Exception:
+                logger.exception(
+                    "[%s %s] fitted and saved, but its diagnosis plots failed",
+                    label,
+                    stage,
                 )
-            else:
-                diagnose_and_plot(signatures[stage])
+                failed_diagnoses.append(stage)
+    if failed_diagnoses:
+        logger.warning(
+            "[%s] diagnosis plots failed for %s (errors above); the signatures "
+            "themselves were fitted and saved",
+            label,
+            failed_diagnoses,
+        )
     return signatures
