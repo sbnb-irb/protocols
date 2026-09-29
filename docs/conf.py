@@ -33,6 +33,7 @@ extensions = [
     "myst_nb",  # Markdown and Jupyter Notebook support
     "sphinx_copybutton",  # add copy button to code blocks
     "sphinx.ext.autosummary",
+    "sphinx.ext.apidoc",  # API reference pages generated from the package on every build
     "sphinx_thebe",
     "sphinx_togglebutton",
 ]
@@ -43,6 +44,7 @@ exclude_patterns = [
     ".DS_Store",
     "jupyter_execute",
     "conf.py",
+    "reference/modules.rst",  # apidoc's extra table of contents; the package page is the entry point
 ]
 
 # -- Theme configurations ---------------------------------------------------
@@ -90,9 +92,21 @@ thebe_config = {
 ## autosummary options
 autosummary_generate = True
 
+## apidoc: one page per module of the package, written to docs/reference/ (not versioned)
+apidoc_modules = [{"path": "../src/chemcheck_protocols", "destination": "reference"}]
+apidoc_separate_modules = True
+apidoc_module_first = True
+apidoc_automodule_options = ["members", "show-inheritance"]
+
 ## autodoc options
 autodoc_typehints = "description"
 add_module_names = False
+autodoc_default_options = {
+    # pydantic internals, not part of the configuration schema
+    "exclude-members": "model_config, model_fields, model_computed_fields",
+    # document each object once, in its own module, not again where __init__ re-exports it
+    "ignore-module-all": True,
+}
 
 ## sphinx_new_tab_link
 new_tab_link_show_external_link_icon = True
