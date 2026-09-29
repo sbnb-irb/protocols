@@ -4,6 +4,7 @@ import pytest
 from chemcheck_protocols.evaluation import (
     cosine_nn_recapitulation_auroc,
     get_shared_vectors,
+    heldout_nn_recapitulation_auroc,
     shared_key_recapitulation,
 )
 
@@ -77,3 +78,55 @@ def test_too_few_shared_molecules_is_rejected(vectors):
         get_shared_vectors(
             FakeSignature(["A"], vectors[:1]), FakeSignature(["A"], vectors[:1])
         )
+
+
+@pytest.fixture
+def heldout_mask(vectors):
+    mask = np.zeros(len(vectors), dtype=bool)
+    mask[:80] = True
+    return mask
+
+
+def test_heldout_score_only_depends_on_heldout_rows(vectors, heldout_mask):
+    rng = np.random.default_rng(5)
+    perfect = heldout_nn_recapitulation_auroc(
+        vectors, vectors, heldout_mask, random_state=0
+    )
+    # scrambling held-out rows destroys their neighbours...
+    scrambled = vectors.copy()
+    scrambled[heldout_mask] = rng.normal(size=(heldout_mask.sum(), 16))
+    lost = heldout_nn_recapitulation_auroc(
+        vectors, scrambled, heldout_mask, random_state=0
+    )
+    assert perfect["auroc"] == pytest.approx(1.0)
+    assert lost["auroc"] == pytest.approx(0.5, abs=0.1)
+    assert lost["n_heldout"] == 80
+    assert lost["ci_low"] <= lost["auroc"] <= lost["ci_high"]
+
+
+def test_same_seed_gives_pairable_bootstraps(vectors, heldout_mask):
+    noisy = vectors + np.random.default_rng(2).normal(scale=0.5, size=vectors.shape)
+    first = heldout_nn_recapitulation_auroc(
+        vectors, noisy, heldout_mask, random_state=3
+    )
+    second = heldout_nn_recapitulation_auroc(
+        vectors, noisy, heldout_mask, random_state=3
+    )
+    np.testing.assert_array_equal(first["bootstrap_aurocs"], second["bootstrap_aurocs"])
+
+
+def test_all_zero_rows_are_left_out(vectors, heldout_mask):
+    with_zeros = vectors.copy()
+    with_zeros[:5] = 0.0  # e.g. molecules without any hit in a binary sign0
+    result = heldout_nn_recapitulation_auroc(
+        with_zeros, vectors, heldout_mask, random_state=0
+    )
+    assert result["n_molecules"] == 395
+    assert result["n_heldout"] == 75
+
+
+def test_heldout_inputs_are_validated(vectors, heldout_mask):
+    with pytest.raises(ValueError, match="Row counts differ"):
+        heldout_nn_recapitulation_auroc(vectors, vectors[:10], heldout_mask)
+    with pytest.raises(ValueError, match="No held-out molecules"):
+        heldout_nn_recapitulation_auroc(vectors, vectors, np.zeros(400, dtype=bool))

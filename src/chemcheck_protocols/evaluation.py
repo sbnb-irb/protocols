@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.spatial.distance import pdist, squareform
+from scipy.spatial.distance import cdist, pdist, squareform
 from sklearn.metrics import auc, roc_auc_score, roc_curve
 from sklearn.metrics.pairwise import paired_cosine_distances
 
@@ -240,6 +240,118 @@ def cosine_nn_recapitulation_auroc(
         "cutoff_std": distance_cutoff_std,
         "mean_positive_rate": float(np.mean(pos_rates)),
         "n_valid_subsamples": len(aurocs),
+    }
+
+
+def heldout_nn_recapitulation_auroc(
+    ref_vectors: np.ndarray,
+    query_vectors: np.ndarray,
+    heldout_mask: np.ndarray,
+    p_value_cutoff: float = 0.01,
+    n_bootstrap: int = 100,
+    random_state: int | None = None,
+) -> dict[str, Any]:
+    """AUROC for recapitulating the reference neighbours of held-out molecules.
+
+    The recapitulation test of :func:`cosine_nn_recapitulation_auroc`, restricted
+    to pairs between a held-out molecule (left out when the space was fitted)
+    and every other molecule. Pairs whose ``ref_vectors`` cosine distance is at
+    or below the background ``p_value_cutoff`` cutoff are positives, and the
+    ``query_vectors`` cosine distance ranks them. The uncertainty comes from
+    bootstrapping the held-out molecules, since pairs sharing a molecule are not
+    independent. With the same ``random_state``, two query spaces scored against
+    the same reference get the same resamples, so their ``bootstrap_aurocs`` can
+    be compared pairwise.
+
+    Parameters
+    ----------
+    ref_vectors : numpy.ndarray, shape (n_molecules, n_features)
+        Vectors defining the true neighbours, e.g. sign0 from a fit on all molecules.
+    query_vectors : numpy.ndarray, shape (n_molecules, n_features)
+        Vectors evaluated, e.g. sign3 of a space fitted without the held-out
+        molecules. Must be row-aligned with ``ref_vectors``.
+    heldout_mask : numpy.ndarray of bool, shape (n_molecules,)
+        True for the held-out molecules.
+    p_value_cutoff : float, default 0.01
+        Background-distribution p-value defining the NN cutoff.
+    n_bootstrap : int, default 100
+        Bootstrap resamples of the held-out molecules.
+    random_state : int, optional
+        Seed for the background cutoff and the bootstrap.
+
+    Returns
+    -------
+    dict
+        ``auroc``, bootstrap ``std``, ``ci_low``/``ci_high`` (95%), ``cutoff``,
+        ``cutoff_std``, ``n_heldout``, ``n_molecules``, ``n_pairs``,
+        ``positive_rate`` and ``bootstrap_aurocs`` (NaN for degenerate resamples).
+
+    Raises
+    ------
+    ValueError
+        If the inputs are not row-aligned or no held-out molecule remains.
+    RuntimeError
+        If no pair (or every pair) falls within the cutoff.
+    """
+    heldout_mask = np.asarray(heldout_mask, dtype=bool)
+    if not ref_vectors.shape[0] == query_vectors.shape[0] == heldout_mask.shape[0]:
+        raise ValueError(
+            f"Row counts differ: ref {ref_vectors.shape[0]}, query "
+            f"{query_vectors.shape[0]}, heldout_mask {heldout_mask.shape[0]}"
+        )
+    # Cosine distance is undefined for all-zero vectors (e.g. inactive molecules in sign0).
+    defined = (np.linalg.norm(ref_vectors, axis=1) > 0) & (
+        np.linalg.norm(query_vectors, axis=1) > 0
+    )
+    if not defined.all():
+        logger.warning(
+            "Leaving out %d molecules with an all-zero vector (%d of them held out)",
+            np.sum(~defined),
+            np.sum(~defined & heldout_mask),
+        )
+    ref_vectors, query_vectors = ref_vectors[defined], query_vectors[defined]
+    heldout_idx = np.flatnonzero(heldout_mask[defined])
+    if len(heldout_idx) == 0:
+        raise ValueError("No held-out molecules to evaluate")
+
+    distance_cutoff, distance_cutoff_std = background_distance_cutoff(
+        ref_vectors, p_value_cutoff=p_value_cutoff, random_state=random_state
+    )
+    ref_distances = cdist(ref_vectors[heldout_idx], ref_vectors, metric="cosine")
+    query_distances = cdist(query_vectors[heldout_idx], query_vectors, metric="cosine")
+    not_self = np.arange(ref_vectors.shape[0])[None, :] != heldout_idx[:, None]
+    is_neighbour = ref_distances <= distance_cutoff
+
+    def score(rows: np.ndarray) -> float:
+        y_true = is_neighbour[rows][not_self[rows]]
+        if y_true.all() or not y_true.any():
+            return float("nan")
+        return float(roc_auc_score(y_true, -query_distances[rows][not_self[rows]]))
+
+    n_heldout = len(heldout_idx)
+    auroc = score(np.arange(n_heldout))
+    if np.isnan(auroc):
+        raise RuntimeError(
+            f"No informative pairs at cutoff {distance_cutoff:.5f}: "
+            f"{is_neighbour[not_self].sum()} of {not_self.sum()} pairs are neighbours"
+        )
+    rng = np.random.default_rng(random_state)
+    bootstrap_aurocs = np.array(
+        [score(rng.integers(0, n_heldout, n_heldout)) for _ in range(n_bootstrap)]
+    )
+    ci_low, ci_high = np.nanpercentile(bootstrap_aurocs, [2.5, 97.5])
+    return {
+        "auroc": auroc,
+        "std": float(np.nanstd(bootstrap_aurocs)),
+        "ci_low": float(ci_low),
+        "ci_high": float(ci_high),
+        "cutoff": distance_cutoff,
+        "cutoff_std": distance_cutoff_std,
+        "n_heldout": n_heldout,
+        "n_molecules": int(ref_vectors.shape[0]),
+        "n_pairs": int(not_self.sum()),
+        "positive_rate": float(is_neighbour[not_self].mean()),
+        "bootstrap_aurocs": bootstrap_aurocs,
     }
 
 
