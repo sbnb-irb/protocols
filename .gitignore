@@ -22,3 +22,7 @@ Thumbs.db
 
 # ---- Others ----
 
+
+# ---- Docs build output ----
+docs/_build/
+docs/reference/
