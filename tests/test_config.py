@@ -51,11 +51,34 @@ def test_relative_paths_resolve_against_config_file_folder(tmp_path):
         ),
         (
             {"triplet_sampler": {"method": "jaccard"}},
-            "Input should be 'binary_jaccard'",
+            "Input should be 'bin_jaccard'",
         ),
         (
             {"source": {"format": "cc_h5", "path": "x.h5"}, "holdout_keys": "h.txt"},
             "holdout_keys needs a wide_matrix source",
+        ),
+        (
+            {"triplet_sampler": {"method": "bin_jaccard", "binarize": {}}},
+            "binarize needs log2fc, zscore or percentile",
+        ),
+        (
+            {
+                "triplet_sampler": {
+                    "method": "bin_jaccard",
+                    "binarize": {"percentile": 90, "log2fc": 1.0},
+                }
+            },
+            "use percentile alone",
+        ),
+        (
+            {
+                "source": {"format": "cc_h5", "path": "x.h5"},
+                "triplet_sampler": {
+                    "method": "bin_jaccard",
+                    "triplet_signature": "raw",
+                },
+            },
+            "triplet_signature raw needs a wide_matrix source",
         ),
     ],
 )

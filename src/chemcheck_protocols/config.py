@@ -104,24 +104,63 @@ class FitOptions(_ConfigModel):
     sign3: dict[str, Any] = Field(default_factory=dict)
 
 
+class BinarizationConfig(_ConfigModel):
+    """
+    How continuous values become binary up/down profiles for the triplet sampler.
+
+    Each input column gives an "up" and a "down" feature, and missing values are never
+    called. With ``log2fc`` and/or ``zscore``, a value is called when it passes either
+    rule (the lab's DEP rule for DeepCoverMOA is ``{log2fc: 1.0, zscore: 5.0}``); the
+    z-score is per column, over the molecules being signaturized (sample SD). With
+    ``percentile``, the cut-off is that percentile of all values: above it is "up",
+    below its negative is "down" (the M2 notebooks' scheme, with both sides computed
+    from the original values).
+
+    Parameters
+    ----------
+    log2fc : float, optional
+        Absolute value at or above which a value is called.
+    zscore : float, optional
+        Absolute per-column z-score at or above which a value is called.
+    percentile : float, optional
+        Percentile of all values used as the cut-off; not combined with the others.
+    """
+
+    log2fc: float | None = Field(default=None, gt=0)
+    zscore: float | None = Field(default=None, gt=0)
+    percentile: float | None = Field(default=None, gt=0, lt=100)
+
+    @model_validator(mode="after")
+    def _one_kind_of_rule(self) -> BinarizationConfig:
+        if self.percentile is None and self.log2fc is None and self.zscore is None:
+            raise ValueError("binarize needs log2fc, zscore or percentile")
+        if self.percentile is not None and (self.log2fc or self.zscore):
+            raise ValueError("binarize: use percentile alone, or log2fc/zscore")
+        return self
+
+
 class TripletSamplerConfig(_ConfigModel):
     """
     A non-default sampler for the triplets sign3 is trained on.
 
     Parameters
     ----------
-    method : {"binary_jaccard"}
-        ``binary_jaccard``: chemicalchecker's ``BinaryJaccardTripletSampler``,
-        positives from the Jaccard similarity of binary profiles.
-    triplet_signature : {"sign0", "sign1"}, default "sign0"
-        This dataset's signature that defines similar molecules; must be binary
-        for ``binary_jaccard``.
+    method : {"bin_jaccard"}
+        ``bin_jaccard``: chemicalchecker's ``BinJaccardTripletSampler``, positives
+        from the Jaccard similarity of binary profiles.
+    triplet_signature : {"raw", "sign0", "sign1"}, default "sign0"
+        What defines similar molecules: the dataset's raw input (``wide_matrix``
+        sources; held-out molecules removed, missing values kept) or one of its
+        fitted signatures. Must be binary unless ``binarize`` is given.
+    binarize : BinarizationConfig, optional
+        Turn continuous values into up/down profiles first.
     options : dict
         Forwarded to the sampler's ``generate_triplets``, e.g. ``{seed: 0}``.
     """
 
-    method: Literal["binary_jaccard"]
-    triplet_signature: Literal["sign0", "sign1"] = "sign0"
+    method: Literal["bin_jaccard"]
+    triplet_signature: Literal["raw", "sign0", "sign1"] = "sign0"
+    binarize: BinarizationConfig | None = None
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -174,6 +213,19 @@ class DatasetConfig(_ConfigModel):
         if self.holdout_keys is not None and self.source.format != "wide_matrix":
             raise ValueError(
                 f"holdout_keys needs a wide_matrix source, not {self.source.format}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _raw_triplets_need_wide_matrix(self) -> DatasetConfig:
+        sampler = self.triplet_sampler
+        if (
+            sampler is not None
+            and sampler.triplet_signature == "raw"
+            and self.source.format != "wide_matrix"
+        ):
+            raise ValueError(
+                f"triplet_signature raw needs a wide_matrix source, not {self.source.format}"
             )
         return self
 

@@ -27,6 +27,7 @@ from .config import (
     check_stage_range,
 )
 from .data_loaders import build_sign0_inputs, load_key_list
+from .triplet_profiles import build_triplet_signature
 
 logger = logging.getLogger(__name__)
 
@@ -382,7 +383,7 @@ def fit_sign3(
 
 
 # Config names of the triplet samplers -> classes in chemicalchecker.util.splitter.
-TRIPLET_SAMPLERS = {"binary_jaccard": "BinaryJaccardTripletSampler"}
+TRIPLET_SAMPLERS = {"bin_jaccard": "BinJaccardTripletSampler"}
 
 
 def resolve_triplet_sampler(sampler_config: TripletSamplerConfig) -> list[Any]:
@@ -511,15 +512,15 @@ def run_signature_pipeline(
         cctype: load_fitted_signature(cc_instance, dataset_code, cctype)
         for cctype in STAGE_INPUTS[start_stage]
     }
+    holdout_keys = (
+        None
+        if dataset_config.holdout_keys is None
+        else load_key_list(dataset_config.holdout_keys)
+    )
 
     failed_diagnoses: list[str] = []
     for stage in stages:
         if stage == "sign0":
-            holdout_keys = (
-                None
-                if dataset_config.holdout_keys is None
-                else load_key_list(dataset_config.holdout_keys)
-            )
             signatures["sign0"] = fit_sign0(
                 cc_instance,
                 dataset_code,
@@ -549,21 +550,18 @@ def run_signature_pipeline(
             sampler_config = dataset_config.triplet_sampler
             sampler_options: dict[str, Any] = {}
             if sampler_config is not None:
-                cctype = sampler_config.triplet_signature
-                triplet_signature = signatures.get(cctype)
-                if triplet_signature is None:
-                    triplet_signature = load_fitted_signature(
-                        cc_instance, dataset_code, cctype
-                    )
                 sampler_options = {
-                    "triplet_signature": triplet_signature,
+                    "triplet_signature": build_triplet_signature(
+                        cc_instance, dataset_config, signatures, holdout_keys
+                    ),
                     "triplets_sampler": resolve_triplet_sampler(sampler_config),
                 }
                 logger.info(
-                    "[%s] sign3 triplets: %s on %s, options %s",
+                    "[%s] sign3 triplets: %s on %s (binarize %s), options %s",
                     dataset_code,
                     sampler_config.method,
-                    cctype,
+                    sampler_config.triplet_signature,
+                    sampler_config.binarize,
                     sampler_config.options,
                 )
             signatures["sign3"] = fit_sign3(

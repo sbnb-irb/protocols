@@ -173,7 +173,7 @@ class FakeSampler:
 @pytest.fixture
 def splitter_module(monkeypatch):
     """Stand-in for chemicalchecker.util.splitter providing the custom sampler."""
-    module = SimpleNamespace(BinaryJaccardTripletSampler=FakeSampler, __file__="fake")
+    module = SimpleNamespace(BinJaccardTripletSampler=FakeSampler, __file__="fake")
     monkeypatch.setitem(sys.modules, "chemicalchecker.util.splitter", module)
     return module
 
@@ -183,7 +183,7 @@ def test_configured_sampler_and_triplet_signature_reach_sign3(
 ):
     config = dataset_config(
         tmp_path,
-        triplet_sampler={"method": "binary_jaccard", "options": {"seed": 0}},
+        triplet_sampler={"method": "bin_jaccard", "options": {"seed": 0}},
     )
     result = run_signature_pipeline(
         FakeCC(), config, diagnosis_plots=False, start_stage="sign3"
@@ -207,8 +207,8 @@ def test_sampler_missing_from_chemicalchecker_is_reported(monkeypatch):
     monkeypatch.setitem(
         sys.modules, "chemicalchecker.util.splitter", SimpleNamespace(__file__="old")
     )
-    with pytest.raises(ImportError, match="has no BinaryJaccardTripletSampler"):
-        resolve_triplet_sampler(TripletSamplerConfig(method="binary_jaccard"))
+    with pytest.raises(ImportError, match="has no BinJaccardTripletSampler"):
+        resolve_triplet_sampler(TripletSamplerConfig(method="bin_jaccard"))
 
 
 def test_holdout_keys_file_reaches_sign0(tmp_path):
@@ -230,3 +230,28 @@ def test_failed_diagnosis_plot_does_not_stop_the_pipeline(tmp_path, caplog):
     assert list(result) == ["sign0", "sign1", "neig1"]
     assert "sign0] fitted and saved, but its diagnosis plots failed" in caplog.text
     assert "diagnosis plots failed for ['sign0', 'sign1']" in caplog.text
+
+
+def test_raw_dep_profiles_reach_sign3_without_held_out_molecules(
+    tmp_path, splitter_module
+):
+    (tmp_path / "holdout.txt").write_text("CCCC-X\n")
+    config = dataset_config(
+        tmp_path,
+        holdout_keys=str(tmp_path / "holdout.txt"),
+        triplet_sampler={
+            "method": "bin_jaccard",
+            "triplet_signature": "raw",
+            "binarize": {"log2fc": 1.0},
+        },
+    )
+    (tmp_path / "raw.csv").write_text("inchikey,p1\nAAAA-X,2\nBBBB-X,-3\nCCCC-X,5\n")
+    result = run_signature_pipeline(
+        FakeCC(), config, diagnosis_plots=False, start_stage="sign3"
+    )
+    (_, _, triplet_signature), _ = result["sign3"].fit_calls[0]
+    assert triplet_signature.shape == (2, 2)
+    assert triplet_signature.as_dataframe().to_dict("index") == {
+        "AAAA-X": {"p1_up": 1, "p1_down": 0},
+        "BBBB-X": {"p1_up": 0, "p1_down": 1},
+    }
