@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import numpy as np
@@ -353,6 +354,206 @@ def heldout_nn_recapitulation_auroc(
         "positive_rate": float(is_neighbour[not_self].mean()),
         "bootstrap_aurocs": bootstrap_aurocs,
     }
+
+
+def pooled_heldout_auroc(
+    ref_vectors: np.ndarray,
+    heldout_rows: Sequence[int],
+    query_vectors: Mapping[str, np.ndarray | Sequence[np.ndarray]],
+    p_value_cutoff: float = 0.01,
+    n_bootstrap: int = 100,
+    random_state: int | None = None,
+) -> dict[str, dict[str, Any]]:
+    """
+    Held-out neighbour AUROC of several runs, with bootstrap resamples shared between them.
+
+    The test of :func:`heldout_nn_recapitulation_auroc`, generalised in two ways: several
+    runs are scored on the same pairs and the same resamples, so their differences are
+    paired; and a run may be a set of fold models, each held-out molecule scored with the
+    model that never saw it, all folds pooled into one AUROC. Each held-out molecule is
+    paired with every other molecule; pairs whose ``ref_vectors`` cosine distance is at or
+    below the background ``p_value_cutoff`` cutoff are positives, and each run's cosine
+    distance ranks them. Resamples draw held-out molecules with replacement, since pairs
+    sharing a molecule are not independent.
+
+    Parameters
+    ----------
+    ref_vectors : numpy.ndarray, shape (n_molecules, n_features)
+        Vectors defining the true neighbours, e.g. sign0 of a fit on all molecules.
+    heldout_rows : sequence of int
+        Rows of the held-out molecules, in the order the resamples index them.
+    query_vectors : mapping of str to numpy.ndarray or sequence of numpy.ndarray
+        Per run, either one matrix row-aligned with ``ref_vectors`` (a single model), or
+        one matrix per held-out row (fold models: the matrix of the model that held out
+        that molecule).
+    p_value_cutoff : float, default 0.01
+        Background-distribution p-value defining the neighbour cutoff.
+    n_bootstrap : int, default 100
+        Resamples of the held-out molecules.
+    random_state : int, optional
+        Seed for the background cutoff and the resamples.
+
+    Returns
+    -------
+    dict of str to dict
+        Per run: ``auroc``, ``ci_low``/``ci_high`` (95%, percentile bootstrap), ``std``,
+        ``bootstrap_aurocs`` (NaN for degenerate resamples), ``cutoff``, ``n_heldout``,
+        ``n_molecules``, ``n_pairs`` and ``positive_pairs``.
+
+    Raises
+    ------
+    ValueError
+        If there are no held-out rows, a run's per-row matrices do not match
+        ``heldout_rows``, or no held-out pair is a neighbour.
+    """
+    heldout_rows = np.asarray(heldout_rows, dtype=int)
+    if len(heldout_rows) == 0:
+        raise ValueError("No held-out molecules to evaluate")
+    n_molecules = ref_vectors.shape[0]
+    cutoff, _ = background_distance_cutoff(
+        ref_vectors, p_value_cutoff=p_value_cutoff, random_state=random_state
+    )
+    others = [np.arange(n_molecules) != row for row in heldout_rows]
+    labels = [
+        cdist(ref_vectors[[row]], ref_vectors, metric="cosine")[0, keep] <= cutoff
+        for row, keep in zip(heldout_rows, others)
+    ]
+    if not any(label.any() for label in labels):
+        raise ValueError(f"No held-out pair is a neighbour at cutoff {cutoff:.5f}")
+    distances = {}
+    for run, vectors in query_vectors.items():
+        per_row = (
+            [vectors] * len(heldout_rows)
+            if isinstance(vectors, np.ndarray)
+            else list(vectors)
+        )
+        if len(per_row) != len(heldout_rows):
+            raise ValueError(
+                f"Run {run!r} has {len(per_row)} matrices for {len(heldout_rows)} held-out rows"
+            )
+        distances[run] = [
+            cdist(matrix[[row]], matrix, metric="cosine")[0, keep]
+            for matrix, row, keep in zip(per_row, heldout_rows, others)
+        ]
+
+    def score(run: str, molecules: np.ndarray) -> float:
+        y_true = np.concatenate([labels[m] for m in molecules])
+        if y_true.all() or not y_true.any():
+            return float("nan")
+        return float(
+            roc_auc_score(
+                y_true, -np.concatenate([distances[run][m] for m in molecules])
+            )
+        )
+
+    n_heldout = len(heldout_rows)
+    rng = np.random.default_rng(random_state)
+    resamples = [rng.integers(0, n_heldout, n_heldout) for _ in range(n_bootstrap)]
+    results = {}
+    for run in query_vectors:
+        bootstrap = np.array([score(run, molecules) for molecules in resamples])
+        ci_low, ci_high = np.nanpercentile(bootstrap, [2.5, 97.5])
+        results[run] = {
+            "auroc": score(run, np.arange(n_heldout)),
+            "ci_low": float(ci_low),
+            "ci_high": float(ci_high),
+            "std": float(np.nanstd(bootstrap)),
+            "bootstrap_aurocs": bootstrap,
+            "cutoff": cutoff,
+            "n_heldout": n_heldout,
+            "n_molecules": int(n_molecules),
+            "n_pairs": int(sum(len(label) for label in labels)),
+            "positive_pairs": int(sum(label.sum() for label in labels)),
+        }
+    logger.info(
+        "Scored %d runs on %d held-out molecules (%d neighbour pairs)",
+        len(results),
+        n_heldout,
+        results[next(iter(results))]["positive_pairs"],
+    )
+    return results
+
+
+def paired_difference(
+    first: Mapping[str, Any], second: Mapping[str, Any]
+) -> dict[str, float]:
+    """
+    Difference ``first - second`` of two runs scored on the same resamples, with its 95% CI.
+
+    Parameters
+    ----------
+    first, second : mapping
+        Results of :func:`pooled_heldout_auroc` (or :func:`heldout_nn_recapitulation_auroc`
+        with the same seed and molecules): ``auroc`` and ``bootstrap_aurocs``.
+
+    Returns
+    -------
+    dict of str to float
+        ``difference``, ``ci_low``/``ci_high`` (percentiles of the per-resample differences)
+        and ``fraction_first_better`` (share of resamples where ``first`` scores higher).
+    """
+    deltas = np.asarray(first["bootstrap_aurocs"]) - np.asarray(
+        second["bootstrap_aurocs"]
+    )
+    ci_low, ci_high = np.nanpercentile(deltas, [2.5, 97.5])
+    return {
+        "difference": float(first["auroc"] - second["auroc"]),
+        "ci_low": float(ci_low),
+        "ci_high": float(ci_high),
+        "fraction_first_better": float(np.nanmean(deltas > 0)),
+    }
+
+
+def per_molecule_heldout_auroc(
+    ref_vectors: np.ndarray,
+    heldout_rows: Sequence[int],
+    query_vectors: Mapping[str, np.ndarray],
+    p_value_cutoff: float = 0.01,
+    random_state: int | None = None,
+) -> pd.DataFrame:
+    """
+    Held-out neighbour AUROC of each held-out molecule on its own pairs, per run.
+
+    Shows whether a difference between runs is broad or carried by a few molecules. A
+    molecule can only be scored if it has at least one neighbour (and one non-neighbour)
+    among its pairs; otherwise its AUROC is NaN.
+
+    Parameters
+    ----------
+    ref_vectors : numpy.ndarray, shape (n_molecules, n_features)
+        Vectors defining the true neighbours.
+    heldout_rows : sequence of int
+        Rows of the held-out molecules.
+    query_vectors : mapping of str to numpy.ndarray
+        Per run, a matrix row-aligned with ``ref_vectors``.
+    p_value_cutoff : float, default 0.01
+        Background-distribution p-value defining the neighbour cutoff.
+    random_state : int, optional
+        Seed for the background cutoff.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per held-out molecule: ``row``, ``n_neighbours`` and one AUROC column per run.
+    """
+    cutoff, _ = background_distance_cutoff(
+        ref_vectors, p_value_cutoff=p_value_cutoff, random_state=random_state
+    )
+    rows = []
+    for row in heldout_rows:
+        others = np.arange(ref_vectors.shape[0]) != row
+        is_neighbour = (
+            cdist(ref_vectors[[row]], ref_vectors, metric="cosine")[0, others] <= cutoff
+        )
+        record = {"row": int(row), "n_neighbours": int(is_neighbour.sum())}
+        informative = 0 < is_neighbour.sum() < len(is_neighbour)
+        for run, vectors in query_vectors.items():
+            distances = cdist(vectors[[row]], vectors, metric="cosine")[0, others]
+            record[run] = (
+                roc_auc_score(is_neighbour, -distances) if informative else np.nan
+            )
+        rows.append(record)
+    return pd.DataFrame(rows)
 
 
 def get_shared_vectors(
