@@ -363,3 +363,215 @@ def load_run_config(config_path: str | os.PathLike[str]) -> RunConfig:
         "Loaded run configuration %s: %d dataset(s)", config_path, len(config.datasets)
     )
     return config
+
+
+DatasetCode = Annotated[str, Field(pattern=DATASET_CODE_PATTERN)]
+
+
+class EvaluationReference(_ConfigModel):
+    """
+    What defines the true neighbours in an evaluation: a CC signature, or profiles from a file.
+
+    Parameters
+    ----------
+    name : str
+        Label used in the output tables.
+    signature : {"sign0", "sign1", "sign2", "sign3"}, optional
+        A signature of ``cc_root`` / ``dataset_code`` (e.g. sign0 of the evaluated space, or
+        sign2 of B1.001 for MoA).
+    dataset_code : str, optional
+        Dataset of the signature; defaults to the evaluation's ``dataset_code``.
+    cc_root : pathlib.Path, optional
+        CC instance holding the signature; defaults to the evaluation's ``reference_cc``.
+    profiles : DataSource, optional
+        A ``wide_matrix`` file instead of a signature (duplicated InChIKeys are averaged).
+    binarize : BinarizationConfig, optional
+        Turn the profiles into up/down calls first (e.g. the DEP rule).
+    """
+
+    name: str
+    signature: PipelineStage | None = None
+    dataset_code: DatasetCode | None = None
+    cc_root: ConfigPath | None = None
+    profiles: DataSource | None = None
+    binarize: BinarizationConfig | None = None
+
+    @model_validator(mode="after")
+    def _signature_or_profiles(self) -> EvaluationReference:
+        if (self.signature is None) == (self.profiles is None):
+            raise ValueError(
+                f"reference {self.name!r}: give either signature or profiles"
+            )
+        if self.profiles is None and (self.binarize is not None):
+            raise ValueError(
+                f"reference {self.name!r}: binarize applies to profiles only"
+            )
+        if self.profiles is not None and self.profiles.format != "wide_matrix":
+            raise ValueError(
+                f"reference {self.name!r}: profiles must be a wide_matrix file"
+            )
+        return self
+
+
+class FoldModel(_ConfigModel):
+    """One fold of a run: a CC instance fitted without the molecules in ``holdout``."""
+
+    cc_root: ConfigPath
+    holdout: ConfigPath
+
+
+class EvaluationRun(_ConfigModel):
+    """
+    A model to score: one CC instance, or a set of fold models pooled into one result.
+
+    Parameters
+    ----------
+    name : str
+        Label used in the output tables.
+    cc_root : pathlib.Path, optional
+        CC instance with the sign3 to score.
+    dataset_code : str, optional
+        Dataset of that sign3; defaults to the evaluation's ``dataset_code``.
+    folds : list of FoldModel, optional
+        Instead of ``cc_root``: each held-out molecule is scored with the fold model that
+        never saw it.
+    """
+
+    name: str
+    cc_root: ConfigPath | None = None
+    dataset_code: DatasetCode | None = None
+    folds: list[FoldModel] | None = Field(default=None, min_length=2)
+
+    @model_validator(mode="after")
+    def _instance_or_folds(self) -> EvaluationRun:
+        if (self.cc_root is None) == (self.folds is None):
+            raise ValueError(f"run {self.name!r}: give either cc_root or folds")
+        return self
+
+
+class EvaluationConfig(_ConfigModel):
+    """
+    Held-out evaluation of several runs against one or more references.
+
+    Each held-out molecule is paired with every other molecule that is in the evaluated
+    space (sign0 of ``reference_cc`` / ``dataset_code``), has a sign3 in every run and a
+    vector in the reference; pairs closer than the background ``p_value_cutoff`` cutoff in
+    the reference are the true neighbours, and each run is scored by AUROC on ranking them.
+    All runs share the bootstrap resamples, so differences are paired.
+
+    Parameters
+    ----------
+    reference_cc : pathlib.Path
+        CC instance fitted on all molecules (held-out ones included).
+    dataset_code : str
+        The evaluated space, e.g. ``"D6.002"``.
+    holdout : pathlib.Path, optional
+        Held-out molecules (``load_key_list`` format). Not needed when a run has ``folds``:
+        the folds' held-out files are then the held-out set, in fold order.
+    runs : list of EvaluationRun
+        The models to score; names must be unique.
+    references : list of EvaluationReference
+        At least one; names must be unique.
+    baseline : str, optional
+        Run every other run is compared with; defaults to the first run.
+    comparisons : list of [str, str]
+        Extra paired differences ``first - second`` between runs.
+    n_bootstrap : int, default 100
+        Resamples of the held-out molecules.
+    seed : int, default 0
+        Seed for the background cutoff and the resamples.
+    p_value_cutoff : float, default 0.01
+        Background-distribution p-value defining the neighbour cutoff.
+    per_molecule : bool, default False
+        Also write each held-out molecule's own AUROC (single-instance runs only).
+    cc_diagnostics : bool, default False
+        Also collect CC's own validation numbers of each single-instance run's sign3.
+    output : pathlib.Path
+        Output prefix: ``<output>_scores.csv``, ``<output>_comparisons.csv`` and, if
+        requested, ``<output>_per_molecule.csv`` and ``<output>_cc_diagnostics.csv``.
+    cc_config : pathlib.Path, optional
+        chemicalchecker ``cc_config.json``; if omitted, ``CC_CONFIG`` must be set.
+    log_dir : pathlib.Path, default "logs"
+        Folder for the run's log file.
+    """
+
+    reference_cc: ConfigPath
+    dataset_code: DatasetCode
+    holdout: ConfigPath | None = None
+    runs: list[EvaluationRun] = Field(min_length=1)
+    references: list[EvaluationReference] = Field(min_length=1)
+    baseline: str | None = None
+    comparisons: list[tuple[str, str]] = Field(default_factory=list)
+    n_bootstrap: int = Field(default=100, ge=10)
+    seed: int = 0
+    p_value_cutoff: float = Field(default=0.01, gt=0, lt=1)
+    per_molecule: bool = False
+    cc_diagnostics: bool = False
+    output: ConfigPath
+    cc_config: ConfigPath | None = None
+    log_dir: ConfigPath = Field(default=Path("logs"), validate_default=True)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> EvaluationConfig:
+        for label, names in (
+            ("run", [r.name for r in self.runs]),
+            ("reference", [r.name for r in self.references]),
+        ):
+            duplicates = sorted({n for n in names if names.count(n) > 1})
+            if duplicates:
+                raise ValueError(f"Duplicate {label} name(s): {duplicates}")
+        known = {run.name for run in self.runs}
+        wanted = ([self.baseline] if self.baseline else []) + [
+            n for pair in self.comparisons for n in pair
+        ]
+        unknown = sorted(set(wanted) - known)
+        if unknown:
+            raise ValueError(f"Unknown run name(s) in baseline/comparisons: {unknown}")
+        fold_sets = {
+            tuple(f.holdout for f in run.folds) for run in self.runs if run.folds
+        }
+        if len(fold_sets) > 1:
+            raise ValueError(
+                "Runs with folds must use the same held-out files, in the same order"
+            )
+        if self.holdout is None and not fold_sets:
+            raise ValueError("holdout is required unless a run has folds")
+        return self
+
+    @property
+    def baseline_run(self) -> str:
+        """The run compared with every other run."""
+        return self.baseline or self.runs[0].name
+
+
+def load_evaluation_config(config_path: str | os.PathLike[str]) -> EvaluationConfig:
+    """
+    Read and validate an evaluation configuration YAML file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``config_path`` is not a file.
+    ValueError
+        If the file is not valid YAML.
+    pydantic.ValidationError
+        If the content does not match the schema.
+    """
+    config_path = Path(config_path)
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Evaluation configuration not found: {config_path}")
+    with config_path.open(encoding="utf-8") as handle:
+        try:
+            raw = yaml.safe_load(handle)
+        except yaml.YAMLError as error:
+            raise ValueError(f"Invalid YAML in {config_path}: {error}") from error
+    config = EvaluationConfig.model_validate(
+        raw, context={"config_dir": config_path.resolve().parent}
+    )
+    logger.info(
+        "Loaded evaluation configuration %s: %d run(s), %d reference(s)",
+        config_path,
+        len(config.runs),
+        len(config.references),
+    )
+    return config

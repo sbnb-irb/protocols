@@ -4,6 +4,10 @@ Commands
 --------
 fit-signatures
     Fit sign0 -> sign3 for the datasets in a run configuration YAML file.
+holdout
+    Draw held-out molecules: a random fraction, disjoint folds, or folds stratified by group.
+evaluate
+    Score runs on held-out molecules against one or more references (evaluation YAML file).
 """
 
 from __future__ import annotations
@@ -17,8 +21,20 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from .config import PIPELINE_STAGES, RunConfig, check_stage_range, load_run_config
-from .data_loaders import load_inchikey_mapping
+from .config import (
+    PIPELINE_STAGES,
+    EvaluationConfig,
+    RunConfig,
+    check_stage_range,
+    load_evaluation_config,
+    load_run_config,
+)
+from .data_loaders import (
+    load_inchikey_mapping,
+    load_key_list,
+    read_table_with_required_columns,
+)
+from .holdouts import disjoint_folds, random_holdout, stratified_folds, write_key_list
 from .run_logging import (
     generate_log_filename,
     log_run,
@@ -72,8 +88,72 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Skip saving CC diagnosis canvases, overriding diagnosis_plots in the configuration.",
     )
-    fit.set_defaults(handler=fit_signatures)
+    fit.set_defaults(handler=fit_signatures, load_config=_load_fit_config)
+
+    holdout = commands.add_parser(
+        "holdout",
+        help="Draw held-out molecules (random fraction, disjoint folds or stratified folds).",
+        description="Draw held-out molecules from a key list, reproducibly: sorted keys and "
+        "numpy.random.default_rng(seed). Give --fraction for one held-out set, or --folds for "
+        "disjoint folds (stratified when --groups is given).",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    holdout.add_argument(
+        "--keys",
+        type=Path,
+        required=True,
+        help="Pool of molecules, one InChIKey per line (# comments allowed).",
+    )
+    holdout.add_argument(
+        "--exclude",
+        type=Path,
+        nargs="+",
+        default=[],
+        metavar="FILE",
+        help="Key lists removed from the pool first (e.g. an earlier fold).",
+    )
+    mode = holdout.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--fraction", type=float, help="Share of the pool to hold out.")
+    mode.add_argument("--folds", type=int, help="Number of disjoint folds.")
+    holdout.add_argument(
+        "--groups",
+        type=Path,
+        default=None,
+        help="CSV with columns inchikey,group: deal each group's keys across the "
+        "folds (only with --folds); its keys are the pool, after --keys.",
+    )
+    holdout.add_argument("--seed", type=int, default=0, help="Seed of the draw.")
+    holdout.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="Output file (--fraction) or prefix: <prefix>_fold<i>.txt (--folds).",
+    )
+    holdout.set_defaults(handler=draw_holdout, load_config=None)
+
+    evaluate = commands.add_parser(
+        "evaluate",
+        help="Score runs on held-out molecules against one or more references.",
+        description="Held-out neighbour AUROC of each run against each reference, with paired "
+        "bootstrap differences; settings in an evaluation configuration YAML file.",
+    )
+    evaluate.add_argument(
+        "--config", type=Path, required=True, help="Evaluation configuration YAML file."
+    )
+    evaluate.set_defaults(
+        handler=evaluate_runs,
+        load_config=lambda args: load_evaluation_config(args.config),
+    )
     return parser
+
+
+def _load_fit_config(args: argparse.Namespace) -> RunConfig:
+    config = load_run_config(args.config)
+    config.select_datasets(args.datasets)
+    check_stage_range(
+        args.start_stage or config.start_stage, args.max_stage or config.max_stage
+    )
+    return config
 
 
 def fit_signatures(args: argparse.Namespace, config: RunConfig) -> int:
@@ -158,6 +238,98 @@ def fit_signatures(args: argparse.Namespace, config: RunConfig) -> int:
     return 0
 
 
+def draw_holdout(args: argparse.Namespace, config: None = None) -> int:
+    """
+    Run the ``holdout`` command.
+
+    Returns
+    -------
+    int
+        Exit code: 0 when the held-out files were written.
+    """
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
+    excluded = {key for path in args.exclude for key in load_key_list(path)}
+    pool = sorted(set(load_key_list(args.keys)) - excluded)
+    source = f"{args.keys}" + (
+        f" minus {', '.join(str(p) for p in args.exclude)}" if args.exclude else ""
+    )
+    if args.fraction is not None:
+        if args.groups is not None:
+            logger.error("--groups applies to --folds only")
+            return 2
+        keys = random_holdout(pool, args.fraction, args.seed)
+        write_key_list(
+            args.output,
+            keys,
+            f"{args.fraction:g} of {len(pool)} molecules (seed "
+            f"{args.seed}) from {source}",
+        )
+        return 0
+    if args.groups is not None:
+        table = read_table_with_required_columns(
+            args.groups, columns=["inchikey", "group"]
+        )
+        groups = {
+            k: str(g)
+            for k, g in zip(table["inchikey"], table["group"])
+            if k in set(pool)
+        }
+        folds = stratified_folds(groups, args.folds, args.seed)
+        how = f"stratified by group ({args.groups})"
+    else:
+        folds = disjoint_folds(pool, args.folds, args.seed)
+        how = "disjoint"
+    for i, keys in enumerate(folds, start=1):
+        write_key_list(
+            f"{args.output}_fold{i}.txt",
+            keys,
+            f"fold {i} of {args.folds}, {how}, seed {args.seed}, from {source}",
+        )
+    return 0
+
+
+def evaluate_runs(args: argparse.Namespace, config: EvaluationConfig) -> int:
+    """
+    Run the ``evaluate`` command.
+
+    Returns
+    -------
+    int
+        Exit code: 0 when the result tables were written.
+    """
+    log_file = generate_log_filename(config.log_dir, suffix="evaluate")
+    setup_logging(log_file)
+    with log_run():
+        if config.cc_config is not None:
+            os.environ["CC_CONFIG"] = str(config.cc_config)
+        elif "CC_CONFIG" not in os.environ:
+            logger.error("No cc_config in %s and CC_CONFIG is not set", args.config)
+            return 2
+        from .heldout_evaluation import (
+            cc_signature_opener,
+            run_evaluation,
+            write_evaluation,
+        )
+
+        opener = cc_signature_opener()
+        resume_logging_after_import(log_file)
+        tables = run_evaluation(config, opener)
+        write_evaluation(tables, config.output)
+        for row in tables["comparisons"].itertuples():
+            logger.info(
+                "%s: %s - %s = %+.3f (95%% CI %+.3f to %+.3f)",
+                row.reference,
+                row.first,
+                row.second,
+                row.difference,
+                row.ci_low,
+                row.ci_high,
+            )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """
     Parse arguments, load the run configuration and dispatch to the command.
@@ -174,14 +346,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
-    try:
-        config = load_run_config(args.config)
-        config.select_datasets(args.datasets)
-        check_stage_range(
-            args.start_stage or config.start_stage, args.max_stage or config.max_stage
-        )
-    except (FileNotFoundError, ValidationError, ValueError) as error:
-        parser.error(str(error))
+    config = None
+    if args.load_config is not None:
+        try:
+            config = args.load_config(args)
+        except (FileNotFoundError, ValidationError, ValueError) as error:
+            parser.error(str(error))
     return args.handler(args, config)
 
 
