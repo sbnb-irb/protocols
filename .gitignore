@@ -21,6 +21,7 @@ Thumbs.db
 .vscode/
 
 # ---- Others ----
+_docs/
 
 
 # ---- Docs build output ----
