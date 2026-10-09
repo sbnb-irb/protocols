@@ -4,8 +4,8 @@ from chemcheck_protocols.archiving import find_regenerable_files, format_size
 from chemcheck_protocols.cli import main
 
 
-def make_sign3_models(cc_root, code="A1.001"):
-    models = cc_root / "full" / code[0] / code[:2] / code / "sign3" / "models"
+def make_sign3_models(cc_root, code="A1.001", molecule_set="full"):
+    models = cc_root / molecule_set / code[0] / code[:2] / code / "sign3" / "models"
     models.mkdir(parents=True)
     for name in (
         "all_sign2.h5",
@@ -27,6 +27,17 @@ def test_only_regenerable_files_are_listed(tmp_path):
         "all_sign2_coverage.h5",
     ]
     assert all(path.parent == models for path in found)
+
+
+def test_both_molecule_sets_are_listed(tmp_path):
+    make_sign3_models(tmp_path / "cc")
+    make_sign3_models(tmp_path / "cc", molecule_set="reference")
+    found = find_regenerable_files(tmp_path / "cc")
+    assert len(found) == 6
+    assert {path.relative_to(tmp_path / "cc").parts[0] for path in found} == {
+        "full",
+        "reference",
+    }
 
 
 def test_linked_reference_spaces_are_never_listed(tmp_path):

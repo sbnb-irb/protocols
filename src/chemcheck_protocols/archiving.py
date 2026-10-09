@@ -15,8 +15,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Relative to a CC root: <root>/full/<coordinate letter>/<coordinate>/<dataset code>/sign3/models/
-REGENERABLE_SIGN3_PATTERN = "full/*/*/*/sign3/models/all_sign2*.h5"
+# <root>/<molecule set>/<coordinate letter>/<coordinate>/<dataset code>/sign3/models/: a CC
+# instance keeps its signatures for the "full" molecule set and for the "reference" one.
+MOLECULE_SETS = ("full", "reference")
+REGENERABLE_SIGN3_PATTERN = "{molecule_set}/*/*/*/sign3/models/all_sign2*.h5"
 
 
 def find_regenerable_files(cc_root: Path) -> list[Path]:
@@ -45,7 +47,14 @@ def find_regenerable_files(cc_root: Path) -> list[Path]:
         raise ValueError(f"{cc_root} is not a CC instance: no full/ folder inside")
     real_root = cc_root.resolve()
     files = []
-    for path in sorted(cc_root.glob(REGENERABLE_SIGN3_PATTERN)):
+    candidates = sorted(
+        path
+        for molecule_set in MOLECULE_SETS
+        for path in cc_root.glob(
+            REGENERABLE_SIGN3_PATTERN.format(molecule_set=molecule_set)
+        )
+    )
+    for path in candidates:
         if path.is_symlink() or not path.resolve().is_relative_to(real_root):
             logger.warning(
                 "Skipping %s: it is a link or leads outside the instance", path
