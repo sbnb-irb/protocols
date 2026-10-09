@@ -10,6 +10,8 @@ evaluate
     Score runs on held-out molecules against one or more references (evaluation YAML file).
 prune-instance
     List, and with ``--apply`` delete, the regenerable files of a fitted CC instance.
+archive
+    Prune, back up and move a finished experiment folder to the archive root (dry run by default).
 """
 
 from __future__ import annotations
@@ -36,6 +38,12 @@ from .data_loaders import (
     load_inchikey_mapping,
     load_key_list,
     read_table_with_required_columns,
+)
+from .experiment_archive import (
+    apply_archive,
+    plan_archive,
+    resolve_experiment,
+    root_from_option_or_environment,
 )
 from .holdouts import disjoint_folds, random_holdout, stratified_folds, write_key_list
 from .run_logging import (
@@ -164,6 +172,45 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply", action="store_true", help="Delete the files instead of listing them."
     )
     prune.set_defaults(handler=prune_instance, load_config=None)
+
+    archive = commands.add_parser(
+        "archive",
+        help="Archive a finished experiment folder (dry run unless --apply).",
+        description="Archive an experiment folder (see experiment_archive.py): prune the "
+        "regenerable files of its CC instances, write an essentials backup (everything except "
+        "the instances), mark experiment.yaml archived, move the folder to the archive root "
+        "and add it to the archive README. The roots come from the options or from "
+        "CC_RESULTS_ROOT, CC_ARCHIVE_ROOT and CC_BACKUP_ROOT. Dry run unless --apply is given.",
+    )
+    archive.add_argument(
+        "experiment",
+        help="Experiment folder: a path, or a name inside the results root.",
+    )
+    archive.add_argument(
+        "--results-root",
+        type=Path,
+        default=None,
+        help="Where experiment names are looked up (default: $CC_RESULTS_ROOT).",
+    )
+    archive.add_argument(
+        "--archive-root",
+        type=Path,
+        default=None,
+        help="Where archived experiments go (default: $CC_ARCHIVE_ROOT).",
+    )
+    archive.add_argument(
+        "--backup-root",
+        type=Path,
+        default=None,
+        help="Where the essentials backup is written, outside purged storage "
+        "(default: $CC_BACKUP_ROOT).",
+    )
+    archive.add_argument(
+        "--apply",
+        action="store_true",
+        help="Carry out the archiving instead of reporting the plan.",
+    )
+    archive.set_defaults(handler=archive_experiment, load_config=None)
     return parser
 
 
@@ -379,6 +426,54 @@ def prune_instance(args: argparse.Namespace, config: None = None) -> int:
         return 0
     freed_bytes = delete_files(files)
     logger.info("Deleted %d files, freed %s", len(files), format_size(freed_bytes))
+    return 0
+
+
+def archive_experiment(args: argparse.Namespace, config: None = None) -> int:
+    """
+    Run the ``archive`` command.
+
+    Returns
+    -------
+    int
+        Exit code: 0 when the plan was reported or carried out, 2 when the experiment cannot
+        be archived (bad roots or ``experiment.yaml``, existing destination, links that would
+        break).
+    """
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
+    try:
+        archive_root = root_from_option_or_environment(args.archive_root, "archive")
+        backup_root = root_from_option_or_environment(args.backup_root, "backup")
+        try:
+            results_root = root_from_option_or_environment(args.results_root, "results")
+        except ValueError:
+            results_root = None  # only needed to look an experiment up by name
+        experiment = resolve_experiment(args.experiment, results_root)
+        plan = plan_archive(experiment, archive_root, backup_root)
+    except ValueError as error:
+        logger.error("%s", error)
+        return 2
+
+    logger.info("Experiment %s -> %s", plan.experiment, plan.destination)
+    logger.info("Essentials backup: %s", plan.backup_file)
+    logger.info(
+        "Pruning %d files in %d CC instances (%s)",
+        len(plan.regenerable_files),
+        len(plan.instances),
+        format_size(sum(path.stat().st_size for path in plan.regenerable_files)),
+    )
+    for path in plan.files_mentioning_path:
+        logger.warning("Mentions the experiment's absolute path: %s", path)
+    for path in plan.links_that_break:
+        logger.error("Link that would break when the folder moves: %s", path)
+    if plan.links_that_break:
+        return 2
+    if not args.apply:
+        logger.info("Dry run: nothing changed; run again with --apply to archive")
+        return 0
+    apply_archive(plan)
     return 0
 
 
