@@ -23,10 +23,11 @@ REGENERABLE_SIGN3_PATTERN = "{molecule_set}/*/*/*/sign3/models/all_sign2*.h5"
 
 def find_regenerable_files(cc_root: Path) -> list[Path]:
     """
-    List the regenerable files of the fitted sign3 in a CC instance.
+    List the regenerable files of the fitted sign3 in a CC instance, in both molecule sets
+    (``full/`` and ``reference/``).
 
-    Symbolic links are skipped, as is anything that resolves outside ``cc_root``: reference
-    spaces are links into a shared release and must never be touched.
+    Symbolic links are skipped, as is anything that resolves outside ``cc_root``: spaces linked
+    from a shared release (e.g. a CC update) must never be touched.
 
     Parameters
     ----------
