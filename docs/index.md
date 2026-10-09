@@ -14,6 +14,12 @@ notebooks/*
 ```
 
 ```{toctree}
+:caption: "API reference"
+:hidden:
+reference/chemcheck_protocols
+```
+
+```{toctree}
 :caption: "Contributor's Guide"
 :glob:
 :hidden:

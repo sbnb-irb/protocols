@@ -7,6 +7,7 @@ The **Chemical Checker (CC)** is a resource of small molecule signatures. In the
 2. [The Signaturizers](#the-signaturizers)
 3. [CC Protocols Publication](#cc-protocols-publication)
 4. [Repository Structure](#repository-structure)
+5. [Command-line Toolkit](#command-line-toolkit)
 
 ## The Chemical Checker
 For a quick exploration of what the CC enables, please visit the [CC web app](http://chemicalchecker.org).
@@ -32,6 +33,57 @@ In the **Chemical Checker Protocols Repository**, we illustrate the functioning 
 ### Folders and Files
 - `notebooks`: iPython notebooks (4) for the integration of new bioactivity data using the defined data curation pipeline.
 - `data`: links to download the preprocessed bioactivity data to reproduce the results in the manuscript.
+- `src/chemcheck_protocols`: the same pipeline as a Python package and command-line tool (see below).
+- `configs`: run configurations for the toolkit; `configs/paper_tasks` reproduces the manuscript examples.
+- `scripts/chemcheck_exec.sh`: runs any command inside the CC Singularity container, directly or as a SLURM job.
+- `tests`: tests for the toolkit (`python -m pytest`).
 
 The generated local directories of the CC are divided in full and reference sets of compounds. The full directory contains the computed signatures (from 0 to III) of the complete sets of small molecules for each CC space. The reference set includes a non-redundant subset of the data, computed using the distance matrix among all compounds. 
 
+## Command-line Toolkit
+`chemcheck_protocols` runs the notebooks' pipeline (sign0 -> sign1 -> sign2 -> sign3) from a YAML
+run configuration, with validation, logging and the option to run each stage separately. It needs
+the Python environment of the CC Singularity image; `scripts/chemcheck_exec.sh` runs commands in it.
+
+**1. Configure the container** (once per shell; see the header of `scripts/chemcheck_exec.sh`):
+```bash
+export CC_IMAGE=/path/to/cc.simg                  # Singularity image with chemicalchecker
+export CC_CONFIG=/path/to/cc_config.json          # or cc_config: in the run configuration
+export CC_BIND=/path/to/data,/path/to/local_CC    # folders the container must see
+```
+
+**2. Write a run configuration**, e.g. `configs/paper_tasks/m1_001.yaml` (after downloading the data
+listed in `data/DATA.README`). Relative paths are resolved against the configuration file:
+```yaml
+cc_root: ../../local_CC_M1              # local CC instance, with the reference CC signatures
+datasets:
+  - key: m1
+    name: Drug-microbiome
+    dataset_code: M1.001
+    source: {format: wide_matrix, path: ../../data/M1/microbiota_raw.csv}
+    reference_spaces: new_space         # or {extends: B1.001} for a new version of a CC space
+```
+
+**3. Fit the signatures.** sign0-sign2 take minutes and can run interactively; sign3 takes hours,
+so on a cluster submit it as a job. `--start-stage sign3` reuses the sign1/sign2 already fitted:
+```bash
+bash   scripts/chemcheck_exec.sh python -m chemcheck_protocols fit-signatures \
+       --config configs/paper_tasks/m1_001.yaml --max-stage sign2
+sbatch scripts/chemcheck_exec.sh python -m chemcheck_protocols fit-signatures \
+       --config configs/paper_tasks/m1_001.yaml --start-stage sign3
+```
+SLURM resources default to the `#SBATCH` lines of the script; override them per job with sbatch
+flags (e.g. `sbatch --partition=gpu --gres=gpu:1 --time=3-00:00:00 scripts/chemcheck_exec.sh ...`).
+Run `python -m chemcheck_protocols fit-signatures --help` for all options.
+
+### Archiving finished experiments
+Both commands only report what they would do unless `--apply` is given:
+```bash
+python -m chemcheck_protocols prune-instance <cc_root>        # list the regenerable files of a fitted instance
+python -m chemcheck_protocols archive 2026-09_my_experiment   # prune, back up and move a finished experiment
+```
+`prune-instance` targets `sign3/models/all_sign2*.h5` (about 30 GiB per space; `fit` rebuilds them).
+`archive` takes a folder `<YYYY-MM>_<name>/` with an `experiment.yaml`, backs up everything except
+its CC instances and moves it to the archive root. The roots come from `--results-root`,
+`--archive-root` and `--backup-root`, or from `CC_RESULTS_ROOT`, `CC_ARCHIVE_ROOT` and
+`CC_BACKUP_ROOT`. Details are in the API reference (`experiment_archive`, `archiving`).
