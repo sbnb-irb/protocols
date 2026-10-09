@@ -8,6 +8,8 @@ holdout
     Draw held-out molecules: a random fraction, disjoint folds, or folds stratified by group.
 evaluate
     Score runs on held-out molecules against one or more references (evaluation YAML file).
+prune-instance
+    List, and with ``--apply`` delete, the regenerable files of a fitted CC instance.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from .archiving import delete_files, find_regenerable_files, format_size
 from .config import (
     PIPELINE_STAGES,
     EvaluationConfig,
@@ -144,6 +147,23 @@ def build_parser() -> argparse.ArgumentParser:
         handler=evaluate_runs,
         load_config=lambda args: load_evaluation_config(args.config),
     )
+
+    prune = commands.add_parser(
+        "prune-instance",
+        help="List (and with --apply delete) the regenerable files of a fitted CC instance.",
+        description="Remove sign3/models/all_sign2*.h5, which only 'fit' needs and which it "
+        "rebuilds from the reference sign2. Signatures, trained networks and training files "
+        "are kept. Dry run unless --apply is given.",
+    )
+    prune.add_argument(
+        "cc_root",
+        type=Path,
+        help="Root of the CC instance (the folder that contains full/).",
+    )
+    prune.add_argument(
+        "--apply", action="store_true", help="Delete the files instead of listing them."
+    )
+    prune.set_defaults(handler=prune_instance, load_config=None)
     return parser
 
 
@@ -327,6 +347,38 @@ def evaluate_runs(args: argparse.Namespace, config: EvaluationConfig) -> int:
                 row.ci_low,
                 row.ci_high,
             )
+    return 0
+
+
+def prune_instance(args: argparse.Namespace, config: None = None) -> int:
+    """
+    Run the ``prune-instance`` command.
+
+    Returns
+    -------
+    int
+        Exit code: 0 when the files were listed or deleted, 2 if ``cc_root`` is not an instance.
+    """
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
+    try:
+        files = find_regenerable_files(args.cc_root)
+    except ValueError as error:
+        logger.error("%s", error)
+        return 2
+    total_bytes = sum(path.stat().st_size for path in files)
+    if not args.apply:
+        for path in files:
+            logger.info("%s  %s", format_size(path.stat().st_size), path)
+        logger.info(
+            "Dry run: %d files, %s; run again with --apply to delete them",
+            len(files),
+            format_size(total_bytes),
+        )
+        return 0
+    freed_bytes = delete_files(files)
+    logger.info("Deleted %d files, freed %s", len(files), format_size(freed_bytes))
     return 0
 
 
