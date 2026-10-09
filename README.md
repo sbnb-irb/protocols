@@ -75,3 +75,15 @@ sbatch scripts/chemcheck_exec.sh python -m chemcheck_protocols fit-signatures \
 SLURM resources default to the `#SBATCH` lines of the script; override them per job with sbatch
 flags (e.g. `sbatch --partition=gpu --gres=gpu:1 --time=3-00:00:00 scripts/chemcheck_exec.sh ...`).
 Run `python -m chemcheck_protocols fit-signatures --help` for all options.
+
+### Archiving finished experiments
+Both commands only report what they would do unless `--apply` is given:
+```bash
+python -m chemcheck_protocols prune-instance <cc_root>        # list the regenerable files of a fitted instance
+python -m chemcheck_protocols archive 2026-09_my_experiment   # prune, back up and move a finished experiment
+```
+`prune-instance` targets `sign3/models/all_sign2*.h5` (about 30 GiB per space; `fit` rebuilds them).
+`archive` takes a folder `<YYYY-MM>_<name>/` with an `experiment.yaml`, backs up everything except
+its CC instances and moves it to the archive root. The roots come from `--results-root`,
+`--archive-root` and `--backup-root`, or from `CC_RESULTS_ROOT`, `CC_ARCHIVE_ROOT` and
+`CC_BACKUP_ROOT`. Details are in the API reference (`experiment_archive`, `archiving`).
