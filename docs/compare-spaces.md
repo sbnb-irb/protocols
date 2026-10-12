@@ -70,6 +70,27 @@ With `output: results/name`:
 | `name_curves.csv` | the mean ROC curve and its spread for each recapitulation row (`comparison, direction, p_value, fpr, tpr_mean, tpr_std`, 101 FPR points) |
 | `name_run.yaml` | the settings used and the list of comparisons, so a result can be read without the configuration |
 
+## Plots
+
+`plot-comparison` draws figures from the tables only, so it runs on the host without the container or
+any signature:
+
+```bash
+python -m chemcheck_protocols plot-comparison --tables results/name --output-dir results/figures/name
+```
+
+`--tables` takes one or more output prefixes (their runs are drawn together); figures are written
+as `svg/` and `png/`. `--p-value` picks the neighbour cutoff (default 0.01), `--context` the size
+(`slides` or `paper`) and `--plots` which plots to draw. Points are the mean over repetitions with
+its standard deviation, and the dotted line at 0.5 is chance.
+
+| Plot | Shows | Default |
+|---|---|---|
+| `recovery` | within-space recovery of one stage by another, one lollipop per space and stage pair (at most four spaces per figure) | yes |
+| `grid` | a heatmap of the AUROC between spaces, one per signature pair; `*` marks values above the shuffled null plus 2 SD | yes |
+| `against-null` | each AUROC next to its shuffled null | yes |
+| `roc` | the ROC curves of both directions of one comparison, one line per p-value cutoff | no: one figure per comparison, so ask for it with `--plots roc` |
+
 ## Limitations
 
 - A matrix side has missing values set to 0 ("no change"), which suits log fold changes and

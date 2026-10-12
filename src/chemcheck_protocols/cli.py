@@ -52,7 +52,7 @@ from .experiment_archive import (
     root_from_option_or_environment,
 )
 from .holdouts import disjoint_folds, random_holdout, stratified_folds, write_key_list
-from .plots.comparison import PLOTS, make_plots
+from .plots.comparison import DEFAULT_PLOTS, PLOTS, make_plots
 from .run_logging import (
     generate_log_filename,
     log_run,
@@ -206,7 +206,8 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         choices=sorted(PLOTS),
         default=None,
-        help="Plots to draw (default: all).",
+        help=f"Plots to draw (default: {' '.join(DEFAULT_PLOTS)}; roc makes one figure "
+        "per comparison, so name it to get it).",
     )
     plot.add_argument(
         "--p-value",

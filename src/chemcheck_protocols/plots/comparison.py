@@ -377,6 +377,10 @@ PLOTS: dict[str, Callable[..., list[Path]]] = {
 }
 
 
+# ``roc`` makes one figure per comparison, so it is drawn only when asked for.
+DEFAULT_PLOTS = [name for name in PLOTS if name != "roc"]
+
+
 def make_plots(
     prefixes: Sequence[str | Path],
     output_dir: str | Path,
@@ -385,7 +389,7 @@ def make_plots(
     context: str = "slides",
 ) -> list[Path]:
     """
-    Draw the chosen plots (default: all) from the tables of ``compare-spaces`` outputs.
+    Draw the chosen plots (default: ``DEFAULT_PLOTS``, all but ``roc``) from the tables of ``compare-spaces`` outputs.
 
     Raises
     ------
@@ -400,7 +404,7 @@ def make_plots(
     comparisons, curves = read_tables(prefixes)
     plot_style.apply_matplotlib(context)
     written = []
-    for name in plots or PLOTS:
+    for name in plots or DEFAULT_PLOTS:
         written += PLOTS[name](comparisons, curves, Path(output_dir), p_value)
     logger.info("Drew %d figure file(s) in %s", len(written), output_dir)
     return written

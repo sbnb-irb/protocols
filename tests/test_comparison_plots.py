@@ -71,13 +71,21 @@ def names(paths):
     return sorted(p.name for p in paths if p.suffix == ".png")
 
 
+def test_the_roc_plot_is_drawn_only_when_asked_for(prefix, tmp_path):
+    assert not any(
+        "roc" in name for name in names(make_plots([prefix], tmp_path / "default"))
+    )
+    assert names(make_plots([prefix], tmp_path / "asked", ["roc"])) == [
+        "roc_tx_sign2_vs_prot_sign2.png"
+    ]
+
+
 def test_every_plot_is_drawn_from_the_tables_alone(prefix, tmp_path):
     written = make_plots([prefix], tmp_path / "figures")
     assert names(written) == [
         "against_null.png",
         "grid_sign2_sign2.png",
         "recovery.png",
-        "roc_tx_sign2_vs_prot_sign2.png",
     ]
     assert all(path.stat().st_size > 0 for path in written)
     assert {path.parent.name for path in written} == {"svg", "png"}
