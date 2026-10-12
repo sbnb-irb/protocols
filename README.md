@@ -76,6 +76,14 @@ SLURM resources default to the `#SBATCH` lines of the script; override them per 
 flags (e.g. `sbatch --partition=gpu --gres=gpu:1 --time=3-00:00:00 scripts/chemcheck_exec.sh ...`).
 Run `python -m chemcheck_protocols fit-signatures --help` for all options.
 
+### Comparing spaces
+`compare-spaces` compares spaces (or a space and a plain matrix) on their shared compounds at any
+stage, sign0 to sign3, by neighbour recapitulation with a shuffled null. One YAML file per
+question; see [docs/compare-spaces.md](docs/compare-spaces.md) and `configs/compare_spaces/example.yaml`:
+```bash
+bash scripts/chemcheck_exec.sh python -m chemcheck_protocols compare-spaces --config configs/compare_spaces/example.yaml
+```
+
 ### Archiving finished experiments
 Both commands only report what they would do unless `--apply` is given:
 ```bash

@@ -1,0 +1,25 @@
+# Example of a space comparison (python -m chemcheck_protocols compare-spaces --config <this file>).
+# Relative paths are resolved against this file. See docs/compare-spaces.md for every setting.
+cc_config: /path/to/cc_config.json   # or export CC_CONFIG
+output: results/example               # writes example_comparisons.csv, example_curves.csv, example_run.yaml
+
+spaces:
+  - {name: space-a, cc_root: /path/to/local_CC_a, dataset_code: D1.003}
+  - {name: space-b, cc_root: /path/to/local_CC_b, dataset_code: D6.005}
+  - {name: published, cc_root: /path/to/local_CC_published, dataset_code: D1.002}
+  - {name: raw-a, matrix: /path/to/space_a_matrix.csv}   # a plain compound x feature file, no CC signature
+
+compounds: measured        # measured | all_shared | from_file (+ compounds_file)
+signatures: [sign1, sign2] # for pairs and against
+
+pairs:                     # each pair, at each of the signatures above
+  - [space-a, space-b]
+against:                   # one reference with several spaces
+  - {reference: published, spaces: [space-a]}
+within_space:              # each CC space at a lower and a higher stage
+  - [sign0, sign2]
+comparisons:               # anything else, written out
+  - a: {space: space-a, signature: sign0}
+    b: {space: space-b, signature: sign3}
+
+p_value_cutoffs: [0.01, 0.001]
