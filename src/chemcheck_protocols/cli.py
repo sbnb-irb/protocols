@@ -8,6 +8,10 @@ holdout
     Draw held-out molecules: a random fraction, disjoint folds, or folds stratified by group.
 evaluate
     Score runs on held-out molecules against one or more references (evaluation YAML file).
+compare-spaces
+    Compare fitted spaces on their shared compounds by neighbour recapitulation (comparison YAML).
+plot-comparison
+    Draw figures from the tables written by compare-spaces (no signatures needed).
 prune-instance
     List, and with ``--apply`` delete, the regenerable files of a fitted CC instance.
 archive
@@ -28,9 +32,11 @@ from pydantic import ValidationError
 from .archiving import delete_files, find_regenerable_files, format_size
 from .config import (
     PIPELINE_STAGES,
+    ComparisonConfig,
     EvaluationConfig,
     RunConfig,
     check_stage_range,
+    load_comparison_config,
     load_evaluation_config,
     load_run_config,
 )
@@ -46,6 +52,7 @@ from .experiment_archive import (
     root_from_option_or_environment,
 )
 from .holdouts import disjoint_folds, random_holdout, stratified_folds, write_key_list
+from .plots.comparison import PLOTS, make_plots
 from .run_logging import (
     generate_log_filename,
     log_run,
@@ -155,6 +162,66 @@ def build_parser() -> argparse.ArgumentParser:
         handler=evaluate_runs,
         load_config=lambda args: load_evaluation_config(args.config),
     )
+
+    compare = commands.add_parser(
+        "compare-spaces",
+        help="Compare fitted spaces on the compounds they share.",
+        description="Neighbour-recapitulation AUROC between pairs of spaces (both directions, "
+        "with a shuffled null) and within each space across signature types; settings in a "
+        "comparison configuration YAML file.",
+    )
+    compare.add_argument(
+        "--config", type=Path, required=True, help="Comparison configuration YAML file."
+    )
+    compare.set_defaults(
+        handler=compare_spaces,
+        load_config=lambda args: load_comparison_config(args.config),
+    )
+
+    plot = commands.add_parser(
+        "plot-comparison",
+        help="Draw figures from the output of compare-spaces.",
+        description="Figures from the tables of one or more compare-spaces runs: within-space "
+        "recovery, ROC curves, AUROC grids and AUROC against the shuffled null. Plots with no "
+        "matching rows are skipped. Runs on the host; needs no signatures.",
+    )
+    plot.add_argument(
+        "--tables",
+        type=Path,
+        nargs="+",
+        required=True,
+        metavar="PREFIX",
+        help="Output prefix of each compare-spaces run (the 'output' of its configuration).",
+    )
+    plot.add_argument(
+        "--output-dir",
+        type=Path,
+        required=True,
+        help="Folder for the svg/ and png/ figures.",
+    )
+    plot.add_argument(
+        "--plots",
+        nargs="+",
+        choices=sorted(PLOTS),
+        default=None,
+        help="Plots to draw (default: all).",
+    )
+    plot.add_argument(
+        "--p-value",
+        type=float,
+        default=0.01,
+        help="Neighbour cutoff of the rows to plot.",
+    )
+    plot.add_argument(
+        "--context",
+        choices=("slides", "paper"),
+        default="slides",
+        help="Figure size and font size.",
+    )
+    plot.add_argument(
+        "--log-dir", type=Path, default=Path("logs"), help="Folder for the run log."
+    )
+    plot.set_defaults(handler=plot_comparison, load_config=None)
 
     prune = commands.add_parser(
         "prune-instance",
@@ -354,6 +421,56 @@ def draw_holdout(args: argparse.Namespace, config: None = None) -> int:
             keys,
             f"fold {i} of {args.folds}, {how}, seed {args.seed}, from {source}",
         )
+    return 0
+
+
+def compare_spaces(args: argparse.Namespace, config: ComparisonConfig) -> int:
+    """
+    Run the ``compare-spaces`` command.
+
+    Returns
+    -------
+    int
+        Exit code: 0 when the result tables were written.
+    """
+    log_file = generate_log_filename(config.log_dir, suffix="compare_spaces")
+    setup_logging(log_file)
+    with log_run():
+        if config.cc_config is not None:
+            os.environ["CC_CONFIG"] = str(config.cc_config)
+        elif "CC_CONFIG" not in os.environ:
+            logger.error("No cc_config in %s and CC_CONFIG is not set", args.config)
+            return 2
+        from .heldout_evaluation import cc_signature_opener
+        from .space_comparison import run_comparison, write_comparison
+
+        opener = cc_signature_opener()
+        resume_logging_after_import(log_file)
+        write_comparison(run_comparison(config, opener), config)
+    return 0
+
+
+def plot_comparison(args: argparse.Namespace, config: None) -> int:
+    """
+    Run the ``plot-comparison`` command.
+
+    Returns
+    -------
+    int
+        Exit code: 0 when the figures were written, 2 when a table is missing.
+    """
+    setup_logging(generate_log_filename(args.log_dir, suffix="plot_comparison"))
+    with log_run():
+        import matplotlib
+
+        matplotlib.use("Agg")
+        try:
+            make_plots(
+                args.tables, args.output_dir, args.plots, args.p_value, args.context
+            )
+        except FileNotFoundError as error:
+            logger.error("%s", error)
+            return 2
     return 0
 
 

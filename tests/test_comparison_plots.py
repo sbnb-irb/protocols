@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from chemcheck_protocols.cli import main
 from chemcheck_protocols.plots.comparison import make_plots, read_tables
 from chemcheck_protocols.space_comparison import COMPARISON_COLUMNS, CURVE_COLUMNS
 
@@ -116,6 +117,36 @@ def test_unknown_plots_and_missing_tables_are_refused(prefix, tmp_path):
         make_plots([prefix], tmp_path, ["pie"])
     with pytest.raises(FileNotFoundError, match="compare-spaces"):
         make_plots([tmp_path / "nothing"], tmp_path)
+
+
+def test_the_command_draws_figures_and_reports_a_missing_table(prefix, tmp_path):
+    figures = tmp_path / "figures"
+    code = main(
+        [
+            "plot-comparison",
+            "--tables",
+            str(prefix),
+            "--output-dir",
+            str(figures),
+            "--plots",
+            "recovery",
+            "--log-dir",
+            str(tmp_path / "logs"),
+        ]
+    )
+    assert code == 0 and (figures / "png" / "recovery.png").exists()
+    code = main(
+        [
+            "plot-comparison",
+            "--tables",
+            str(tmp_path / "nothing"),
+            "--output-dir",
+            str(figures),
+            "--log-dir",
+            str(tmp_path / "logs"),
+        ]
+    )
+    assert code == 2
 
 
 def test_comparisons_with_dots_in_their_names_get_their_own_figure_files(

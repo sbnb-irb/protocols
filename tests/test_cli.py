@@ -70,3 +70,12 @@ def test_evaluate_rejects_an_invalid_configuration(tmp_path, capsys):
         main(["evaluate", "--config", str(config_file)])
     assert stop.value.code == 2
     assert "runs" in capsys.readouterr().err
+
+
+def test_compare_spaces_rejects_an_invalid_configuration(tmp_path, capsys):
+    config_file = tmp_path / "compare.yaml"
+    config_file.write_text("spaces: []\noutput: out\n")
+    with pytest.raises(SystemExit) as stop:
+        main(["compare-spaces", "--config", str(config_file)])
+    assert stop.value.code == 2
+    assert "spaces" in capsys.readouterr().err
