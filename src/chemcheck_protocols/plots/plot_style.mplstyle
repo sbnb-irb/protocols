@@ -1,0 +1,64 @@
+# Plot style for matplotlib and seaborn (paper size; see plot_style.py for slides).
+# Usage: plt.style.use("plot_style.mplstyle"), or plot_style.apply_matplotlib().
+# Rules it encodes: no grid, no top/right spines, one Helvetica-style open font,
+# the four palette colours, white background, editable SVG text.
+
+# Figure: one column of a journal page (89 mm x 65 mm)
+figure.figsize: 3.5, 2.56
+figure.dpi: 150
+figure.facecolor: white
+figure.constrained_layout.use: True
+
+# Font: open Helvetica clones first, then Arial, then matplotlib's bundled font
+font.family: sans-serif
+font.sans-serif: TeX Gyre Heros, Nimbus Sans, Helvetica, Arial, DejaVu Sans
+font.size: 7
+axes.labelsize: 7
+axes.titlesize: 7
+xtick.labelsize: 6
+ytick.labelsize: 6
+legend.fontsize: 6
+legend.title_fontsize: 7
+
+# Axes: no grid, only left and bottom spines, black ink
+axes.grid: False
+axes.spines.top: False
+axes.spines.right: False
+axes.linewidth: 0.6
+axes.edgecolor: black
+axes.labelcolor: black
+axes.axisbelow: True
+axes.prop_cycle: cycler('color', ['326586', 'A8505E', '2A9D8F', '8C7FA6'])
+xtick.color: black
+ytick.color: black
+xtick.direction: out
+ytick.direction: out
+xtick.major.size: 3
+ytick.major.size: 3
+xtick.major.width: 0.6
+ytick.major.width: 0.6
+
+# Marks
+lines.linewidth: 0.8
+lines.markersize: 3.5
+# Filled marks (bars, histogram bins, areas) get a thin white edge so adjacent ones stay apart
+patch.force_edgecolor: True
+patch.edgecolor: white
+patch.linewidth: 0.4
+scatter.edgecolors: none
+
+# Legend: no frame; place it where it hides no data
+legend.frameon: False
+
+# Colour maps (diverging_blue_red and sequential_white_blue are registered by plot_style.py)
+image.cmap: viridis
+
+# Saving: SVG with editable text + PNG at 300 dpi; keep the figure size as set
+savefig.dpi: 300
+savefig.format: svg
+savefig.bbox: standard
+savefig.facecolor: white
+savefig.transparent: False
+svg.fonttype: none
+pdf.fonttype: 42
+ps.fonttype: 42

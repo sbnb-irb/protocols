@@ -1,0 +1,22 @@
+# Paper Task 3 (Comajuncosa-Creus et al., Nat. Protoc. 2025): a new CC space, D6.001,
+# from proteome fingerprints of 875 compounds in HCT116 cells (Mitchell et al. 2023).
+# Equivalent to notebooks/D6.001.ipynb.
+#
+# Run (inside the CC Singularity image, with src/ on PYTHONPATH):
+#   python -m chemcheck_protocols fit-signatures --config configs/paper_tasks/d6_001.yaml
+#
+# Relative paths are resolved against this file's folder. Data: see notebooks/Download_Data.ipynb.
+
+cc_root: ../../local_CC_D6
+# cc_config: /path/to/cc_config.json          # or set the CC_CONFIG environment variable
+# custom_data_path: /path/to/CC_DATA/DATA     # downloaded reference signatures (Procedure step 3)
+
+datasets:
+  - key: d6
+    name: Proteomics
+    dataset_code: D6.001
+    source:
+      format: wide_matrix
+      path: ../../data/D6/D6_processed_LOG2FC.tsv
+      separator: "\t"
+    reference_spaces: new_space
