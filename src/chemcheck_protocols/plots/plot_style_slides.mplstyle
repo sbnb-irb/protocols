@@ -1,0 +1,18 @@
+# Slide sizes, applied on top of plot_style.mplstyle (which holds the paper sizes: text 7 pt at a
+# one-column width of 89 mm). Slides: text readable from the back of a room, on half of a 16:9 slide.
+figure.figsize: 6.4, 4.0
+font.size: 12
+axes.labelsize: 12
+axes.titlesize: 12
+xtick.labelsize: 10
+ytick.labelsize: 10
+legend.fontsize: 10
+legend.title_fontsize: 12
+axes.linewidth: 0.8
+xtick.major.width: 0.8
+ytick.major.width: 0.8
+xtick.major.size: 4
+ytick.major.size: 4
+lines.linewidth: 1.2
+lines.markersize: 5
+patch.linewidth: 0.6

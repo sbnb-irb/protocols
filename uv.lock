@@ -473,6 +473,8 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "chemicalchecker" },
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "matplotlib", version = "3.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -508,6 +510,7 @@ docs = [
 requires-dist = [
     { name = "chemicalchecker", specifier = ">=1.0.6" },
     { name = "jupytext", marker = "extra == 'dev'", specifier = ">=1.19.5" },
+    { name = "matplotlib", specifier = ">=3.8" },
     { name = "myst-nb", marker = "python_full_version >= '3.12' and extra == 'docs'", specifier = ">=1.4.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.2" },

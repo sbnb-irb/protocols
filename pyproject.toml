@@ -8,6 +8,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "chemicalchecker>=1.0.6",
+    "matplotlib>=3.8",
     "numpy>=1.26",
     "pandas>=2.2",
     "pydantic>=2.6",
