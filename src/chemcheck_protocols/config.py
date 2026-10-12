@@ -575,3 +575,276 @@ def load_evaluation_config(config_path: str | os.PathLike[str]) -> EvaluationCon
         len(config.references),
     )
     return config
+
+
+class Space(_ConfigModel):
+    """
+    A space to compare: a fitted CC dataset, or a plain matrix file.
+
+    Parameters
+    ----------
+    name : str
+        Label used in the comparisons and the output tables.
+    cc_root, dataset_code : pathlib.Path, str
+        A dataset of a CC instance; its signatures (sign0 to sign3) can be compared.
+    matrix : pathlib.Path
+        Instead of a CC dataset: a delimited file, one row per compound (InChIKeys in the first
+        column) and one column per feature. Duplicated InChIKeys are averaged and missing
+        values count as 0 (no change), so cosine distances are defined.
+    separator : str, default ","
+        Column separator of ``matrix``.
+    """
+
+    name: str = Field(min_length=1)
+    cc_root: ConfigPath | None = None
+    dataset_code: DatasetCode | None = None
+    matrix: ConfigPath | None = None
+    separator: str = ","
+
+    @model_validator(mode="after")
+    def _cc_dataset_or_matrix(self) -> Space:
+        is_cc = self.cc_root is not None and self.dataset_code is not None
+        if is_cc == (self.matrix is not None):
+            raise ValueError(
+                f"space {self.name!r}: give either cc_root and dataset_code, or matrix"
+            )
+        if not is_cc and (self.cc_root is not None or self.dataset_code is not None):
+            raise ValueError(
+                f"space {self.name!r}: cc_root and dataset_code go together"
+            )
+        return self
+
+    @property
+    def is_cc(self) -> bool:
+        """Whether the space is a CC dataset (and not a matrix file)."""
+        return self.matrix is None
+
+
+class Side(_ConfigModel):
+    """One side of a comparison: a space and, for CC datasets, which signature type."""
+
+    space: str
+    signature: PipelineStage | None = None
+
+    @property
+    def label(self) -> str:
+        """``space@sign2`` for a signature, or the space name for a matrix."""
+        return (
+            self.space if self.signature is None else f"{self.space}@{self.signature}"
+        )
+
+
+class Comparison(_ConfigModel):
+    """Two sides compared on the compounds they have in common."""
+
+    a: Side
+    b: Side
+
+    @property
+    def label(self) -> str:
+        return f"{self.a.label} vs {self.b.label}"
+
+
+class Against(_ConfigModel):
+    """One reference space compared with several others."""
+
+    reference: str
+    spaces: list[str] = Field(min_length=1)
+
+
+Population = Literal["measured", "all_shared", "from_file"]
+
+
+class ComparisonConfig(_ConfigModel):
+    """
+    Comparison of spaces on the compounds they have in common (``compare-spaces``).
+
+    A comparison has two sides, ``a`` and ``b``; each side is a signature type of a CC dataset
+    (``sign0`` to ``sign3``) or a matrix file. The same code serves every case: two spaces at
+    one stage, one space at two stages (does sign2 keep the neighbours of sign0?), a space
+    against a published one. Instead of listing every comparison, use the shorthands; all of
+    them are expanded, in this order, into the same list (:meth:`comparisons`):
+
+    * ``pairs`` x ``signatures``: each pair of spaces at each signature type;
+    * ``against``: a reference space with each of several others, at each signature type;
+    * ``within_space``: each CC space at ``[lower, higher]`` signature types;
+    * ``comparisons``: explicit ``{a: {space, signature}, b: {space, signature}}`` entries.
+
+    Each comparison asks how well ``b`` recovers the nearest neighbours of ``a`` and the
+    reverse (neighbour recapitulation, Comajuncosa-Creus et al. 2025, Fig. 3), at each
+    p-value cutoff, against a null where the compounds of the recovering side are shuffled;
+    it also reports the Spearman correlation of the two sides' pairwise cosine distances.
+
+    Parameters
+    ----------
+    spaces : list of Space
+        The spaces; names must be unique.
+    signatures : list of {"sign0", "sign1", "sign2", "sign3"}, default ["sign2"]
+        Signature types for ``pairs`` and ``against``.
+    pairs : list of [str, str]
+        Pairs of space names.
+    against : list of Against
+        A reference space and the spaces compared with it.
+    within_space : list of [lower, higher]
+        Signature-type pairs checked inside every CC space.
+    comparisons : list of Comparison
+        Explicit comparisons.
+    compounds : {"measured", "all_shared", "from_file"}, default "measured"
+        Which compounds the comparison is computed on. ``measured``: compounds with real
+        data in both spaces (those in sign0, sign1 and sign2 of a CC dataset, or the rows of a
+        matrix); at sign0 to sign2 this is every shared compound, and every stage pair of a
+        space is scored on the same compounds. ``all_shared``: every compound
+        present in both signatures; at sign3 that is the whole CC universe, mostly predicted
+        signatures, so it asks whether the spaces organise chemical space alike.
+        ``from_file``: the compounds of ``compounds_file`` that both sides have.
+    compounds_file : pathlib.Path, optional
+        Key list (one InChIKey per line) for ``compounds: from_file``.
+    max_compounds : int, default 50000
+        Random draw (seeded) when more compounds qualify, to keep sign3 comparisons light.
+    p_value_cutoffs : list of float, default [0.01, 0.001]
+        Background p-values defining "nearest neighbour".
+    n_random : int, default 2500
+        Compounds drawn per repetition (smaller pools are drawn at 80%, see
+        :func:`chemcheck_protocols.evaluation.recapitulation_draw_size`).
+    n_subsamples : int, default 5
+        Repetitions averaged.
+    n_permutations : int, default 20
+        Shuffles of the recovering side for the null AUROC.
+    seed : int, default 0
+        Seed for the draws and shuffles.
+    output : pathlib.Path
+        Output prefix; see :func:`chemcheck_protocols.space_comparison.write_comparison`.
+    cc_config : pathlib.Path, optional
+        chemicalchecker ``cc_config.json``; if omitted, ``CC_CONFIG`` must be set.
+    log_dir : pathlib.Path, default "logs"
+        Folder for the run's log file.
+    """
+
+    spaces: list[Space] = Field(min_length=1)
+    signatures: list[PipelineStage] = Field(
+        default_factory=lambda: ["sign2"], min_length=1
+    )
+    pairs: list[tuple[str, str]] = Field(default_factory=list)
+    against: list[Against] = Field(default_factory=list)
+    within_space: list[tuple[PipelineStage, PipelineStage]] = Field(
+        default_factory=list
+    )
+    comparisons_listed: list[Comparison] = Field(
+        default_factory=list, alias="comparisons"
+    )
+    compounds: Population = "measured"
+    compounds_file: ConfigPath | None = None
+    max_compounds: int = Field(default=50000, ge=50)
+    p_value_cutoffs: list[float] = Field(
+        default_factory=lambda: [0.01, 0.001], min_length=1
+    )
+    n_random: int = Field(default=2500, ge=50)
+    n_subsamples: int = Field(default=5, ge=1)
+    n_permutations: int = Field(default=20, ge=1)
+    seed: int = 0
+    output: ConfigPath
+    cc_config: ConfigPath | None = None
+    log_dir: ConfigPath = Field(default=Path("logs"), validate_default=True)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> ComparisonConfig:
+        names = [space.name for space in self.spaces]
+        duplicates = sorted({n for n in names if names.count(n) > 1})
+        if duplicates:
+            raise ValueError(f"Duplicate space name(s): {duplicates}")
+        mentioned = (
+            [n for pair in self.pairs for n in pair]
+            + [n for item in self.against for n in (item.reference, *item.spaces)]
+            + [side.space for c in self.comparisons_listed for side in (c.a, c.b)]
+        )
+        unknown = sorted(set(mentioned) - set(names))
+        if unknown:
+            raise ValueError(f"Unknown space name(s): {unknown}")
+        for lower, higher in self.within_space:
+            if PIPELINE_STAGES.index(lower) >= PIPELINE_STAGES.index(higher):
+                raise ValueError(
+                    f"within_space pair {lower}->{higher} must go to a higher stage"
+                )
+        if (self.compounds == "from_file") != (self.compounds_file is not None):
+            raise ValueError(
+                "compounds_file goes with compounds: from_file, and only then"
+            )
+        if any(not 0 < p < 1 for p in self.p_value_cutoffs):
+            raise ValueError("p_value_cutoffs must be between 0 and 1")
+        by_name = {space.name: space for space in self.spaces}
+        for comparison in self.comparisons_listed:
+            for side in (comparison.a, comparison.b):
+                if by_name[side.space].is_cc != (side.signature is not None):
+                    raise ValueError(
+                        f"{side.space!r}: give a signature for CC datasets and none for matrices"
+                    )
+            if comparison.a == comparison.b:
+                raise ValueError(f"{comparison.label}: both sides are the same")
+        if not self.comparisons():
+            raise ValueError(
+                "Nothing to compare: give pairs, against, within_space or comparisons"
+            )
+        return self
+
+    def comparisons(self) -> list[Comparison]:
+        """All comparisons: the shorthands expanded, then the explicit list, without repeats."""
+        by_name = {space.name: space for space in self.spaces}
+
+        def side(name: str, signature: str) -> Side:
+            return Side(
+                space=name, signature=signature if by_name[name].is_cc else None
+            )
+
+        found: list[Comparison] = []
+        pairs = list(self.pairs) + [
+            (item.reference, other) for item in self.against for other in item.spaces
+        ]
+        for first, second in pairs:
+            if first == second:
+                raise ValueError(f"A space cannot be compared with itself: {first!r}")
+            for signature in self.signatures:
+                found.append(
+                    Comparison(a=side(first, signature), b=side(second, signature))
+                )
+        for space in self.spaces:
+            if space.is_cc:
+                found += [
+                    Comparison(a=side(space.name, lower), b=side(space.name, higher))
+                    for lower, higher in self.within_space
+                ]
+        found += self.comparisons_listed
+        unique = {comparison.label: comparison for comparison in found}
+        return list(unique.values())
+
+
+def load_comparison_config(config_path: str | os.PathLike[str]) -> ComparisonConfig:
+    """
+    Read and validate a space-comparison configuration YAML file.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``config_path`` is not a file.
+    ValueError
+        If the file is not valid YAML.
+    pydantic.ValidationError
+        If the content does not match the schema.
+    """
+    config_path = Path(config_path)
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Comparison configuration not found: {config_path}")
+    with config_path.open(encoding="utf-8") as handle:
+        try:
+            raw = yaml.safe_load(handle)
+        except yaml.YAMLError as error:
+            raise ValueError(f"Invalid YAML in {config_path}: {error}") from error
+    config = ComparisonConfig.model_validate(
+        raw, context={"config_dir": config_path.resolve().parent}
+    )
+    logger.info(
+        "Loaded comparison configuration %s: %d space(s), %d comparison(s)",
+        config_path,
+        len(config.spaces),
+        len(config.comparisons()),
+    )
+    return config
