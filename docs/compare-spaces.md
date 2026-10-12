@@ -8,7 +8,7 @@ any stage of a fit, and it writes tables that the plotting code reads without op
 bash scripts/chemcheck_exec.sh python -m chemcheck_protocols compare-spaces --config configs/compare_spaces/example.yaml
 ```
 
-For held-out molecules and references, use `evaluate` instead (it scores sign3 on molecules left
+For held-out molecules and references, use `evaluate-heldout` (alias `evaluate`) instead (it scores sign3 on molecules left
 out before sign0); `compare-spaces` asks how two spaces relate on the same compounds.
 
 ## What a comparison is

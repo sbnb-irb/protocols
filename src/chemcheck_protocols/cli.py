@@ -150,8 +150,10 @@ def build_parser() -> argparse.ArgumentParser:
     holdout.set_defaults(handler=draw_holdout, load_config=None)
 
     evaluate = commands.add_parser(
-        "evaluate",
-        help="Score runs on held-out molecules against one or more references.",
+        "evaluate-heldout",
+        aliases=["evaluate"],
+        help="Score runs on held-out molecules against one or more references "
+        "(alias: evaluate).",
         description="Held-out neighbour AUROC of each run against each reference, with paired "
         "bootstrap differences; settings in an evaluation configuration YAML file.",
     )
@@ -476,14 +478,14 @@ def plot_comparison(args: argparse.Namespace, config: None) -> int:
 
 def evaluate_runs(args: argparse.Namespace, config: EvaluationConfig) -> int:
     """
-    Run the ``evaluate`` command.
+    Run the ``evaluate-heldout`` command (also available as ``evaluate``).
 
     Returns
     -------
     int
         Exit code: 0 when the result tables were written.
     """
-    log_file = generate_log_filename(config.log_dir, suffix="evaluate")
+    log_file = generate_log_filename(config.log_dir, suffix="evaluate_heldout")
     setup_logging(log_file)
     with log_run():
         if config.cc_config is not None:

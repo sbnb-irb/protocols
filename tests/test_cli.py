@@ -61,13 +61,14 @@ def test_holdout_command_writes_reproducible_folds(tmp_path):
     )
 
 
-def test_evaluate_rejects_an_invalid_configuration(tmp_path, capsys):
+@pytest.mark.parametrize("command", ["evaluate-heldout", "evaluate"])
+def test_evaluate_rejects_an_invalid_configuration(command, tmp_path, capsys):
     config_file = tmp_path / "eval.yaml"
     config_file.write_text(
         "reference_cc: cc\ndataset_code: D6.002\nruns: []\nreferences: []\noutput: out\n"
     )
     with pytest.raises(SystemExit) as stop:
-        main(["evaluate", "--config", str(config_file)])
+        main([command, "--config", str(config_file)])
     assert stop.value.code == 2
     assert "runs" in capsys.readouterr().err
 
