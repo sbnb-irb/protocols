@@ -8,6 +8,7 @@ from chemcheck_protocols.evaluation import (
     paired_difference,
     per_molecule_heldout_auroc,
     pooled_heldout_auroc,
+    recapitulation_draw_size,
     shared_key_recapitulation,
 )
 
@@ -196,3 +197,16 @@ def test_per_molecule_auroc_needs_a_neighbour(vectors):
     scored = table[table.n_neighbours > 0]
     assert (scored["same"] == 1.0).all()
     assert table.loc[table.n_neighbours == 0, "same"].isna().all()
+
+
+@pytest.mark.parametrize(
+    ("n_compounds", "n_random", "n_subsamples", "expected"),
+    [
+        (5000, 1000, 5, 1000),  # pool larger than the draw: unchanged
+        (400, 1000, 5, 320),  # pool is the limit: 80% so the std is not exactly zero
+        (400, 1000, 1, 400),  # a single repetition draws everything
+        (40, 1000, 5, 50),  # never fewer than 50
+    ],
+)
+def test_recapitulation_draw_size(n_compounds, n_random, n_subsamples, expected):
+    assert recapitulation_draw_size(n_compounds, n_random, n_subsamples) == expected

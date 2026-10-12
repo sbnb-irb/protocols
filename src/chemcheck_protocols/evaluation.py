@@ -864,6 +864,20 @@ def get_signature_type_vectors(
     return keys, vectors
 
 
+def recapitulation_draw_size(n_compounds: int, n_random: int, n_subsamples: int) -> int:
+    """
+    Compounds to draw per repetition of the recapitulation test.
+
+    Drawing ``min(n_random, n_compounds)`` from a pool that is not larger than ``n_random``
+    repeats the identical full set and reports a ``std`` of exactly zero. When the pool is
+    the limiting factor (and there are several repetitions), 80% of it is drawn instead.
+    """
+    draw = min(n_random, n_compounds)
+    if draw >= n_compounds and n_subsamples > 1:
+        draw = max(50, int(0.8 * n_compounds))
+    return draw
+
+
 def signature_recovery(
     cc,
     dataset_code: str,
@@ -921,9 +935,8 @@ def signature_recovery(
     keys, vectors = get_signature_type_vectors(cc, dataset_code, sign_types)
     n = len(keys)
 
-    draw = min(n_random, n)
-    if draw >= n and n_subsamples > 1:
-        draw = max(50, int(0.8 * n))
+    draw = recapitulation_draw_size(n, n_random, n_subsamples)
+    if draw < min(n_random, n):
         logger.info(
             "%s: pool of %d compounds is smaller than n_random=%d; drawing %d "
             "(80%%) per repetition so the reported std is meaningful.",
